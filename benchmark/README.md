@@ -44,6 +44,43 @@ its steps; for example, five eight-worker tasks run concurrently in one
 task. Each allocation evaluates its optimization metrics and safely updates
 `summary.csv` and `stages.csv`. Local capacity and worker-pool settings are not used.
 
+Allocations do not get fixed chunks. Every allocation with the same worker
+count claims tasks from one shared queue, so the 12 jobs finish at about the
+same time. A claim is a file `<output_dir>/.slurm/claims/<task_id>.<gen>`
+created with `O_CREAT|O_EXCL`, which is atomic on NFS. It holds JSON: plan id,
+job id, host, pid, allocation index, `claimed_at`, and `status`
+(`running` or `done`). The highest generation is the live claim. A running
+claim is stale, and the next claimant takes it over by creating generation
+`gen+1`, in any of these cases:
+
+- `squeue` read at allocation start no longer lists its job, and the claim is
+  older than that read;
+- it names this job but another process (a requeued job's earlier run);
+- it is a local run's claim on this host and its pid is gone;
+- its heartbeat mtime, touched every 60 s, is over 15 min old.
+
+A `done` claim is final for its plan and stale for a regenerated one, so a
+resubmit replans and `task_phases` (`skip_existing`, `rerun_failed`, matching
+markers) decides what is left. Do not delete `.slurm/claims` while jobs run.
+
+The plan stores tasks in claim order: longest first (by the sum of their step
+time limits), and, among equally long tasks, tasks sharing a policy market
+(data block x `matching_policy`) next to each other. An allocation also prefers
+a market, then a dataset, that it has already loaded.
+
+A task's optimize and evaluate phases share one process. The evaluation reuses
+the in-memory dataset, stages, and manifest after the solver is released.
+Match runs in a fresh process. A run optimized but not evaluated (a crash
+between phases) is evaluated standalone. Before the fan-out, each allocation
+claims its first wave and warms each distinct dataset in it once, one process
+per dataset (`benchmark/warmup.py`: tables, graph levels, and the policy market
+per `matching_policy`). The first-wave tasks then start 1 s apart. Set
+`BENCHMARK_SLURM_WARM=0` to skip the warm-up.
+
+Every phase writes its start, end, wall and CPU seconds, and peak RSS to the
+run's `phase_timings.json` and prints one `phase task=... wall=... cpu=...
+peak_rss=...` line to the allocation log. Jobs request `--mem-per-cpu=4G`.
+
 The complete graph has at most 20 submitted jobs. With assignment metrics
 enabled, the eight downstream slots hold up to four assignment jobs, three
 metrics jobs, and one finalizer. Without assignment metrics, all eight slots
