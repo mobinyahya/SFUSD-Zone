@@ -1,0 +1,48 @@
+# Cross-evaluation copy of restrictive_aa_sib_2627.yaml: identical but with no
+# heatmaps (benchmark/configs/attendance_areas/11-18_crosseval_nov13.yaml).
+# Restrictive attendance areas with the 11-18 tie-breakers, four ways.
+#
+# Every policy is restrictive_aa with sibling-access true and tk-access false;
+# the four toggle CTIP priority and the FRL reserves (policy_configs/
+# restrictive_aa_sib_*.yaml):
+#   restrictive_aa_sib_ctip                CTIP on,  no reserves
+#   restrictive_aa_sib_ctip_reserves       CTIP on,  reserves
+#   restrictive_aa_sib_no_ctip             CTIP off, no reserves
+#   restrictive_aa_sib_no_ctip_reserves    CTIP off, reserves
+#
+# It is the matching config of benchmark/configs/attendance_areas/11-18.yaml,
+# where each generated zoning replaces Con1 and the task's data replaces the
+# data block below. Run on its own it scores today's 2013 map.
+#
+# Local:   uv run sfusd-match simulate --config assignment/configs/attendance_areas/restrictive_aa_sib_2627.yaml --assignments-dir ./assignment_output/attendance_areas/restrictive_aa_sib_2627/assignments
+# Cluster: uv run python -m assignment.slurm submit --config assignment/configs/attendance_areas/restrictive_aa_sib_2627.yaml
+
+data:
+  scenario: attendance-areas-2627
+  overrides: {}
+iterations:
+  start: 0
+  end: 25
+paths:
+  assignment-folder: /soalnas/share/data/school_choice/local_runs/attendance_areas/restrictive_aa_sib_2627/assignments
+output_dir: /soalnas/share/data/school_choice/local_runs/attendance_areas/restrictive_aa_sib_2627/
+random-seed: 2023
+export-aggregate-metrics: true
+export-local-metrics: true
+# Slurm metrics jobs give each worker one CPU, so the per-area reports run in
+# that worker's own process.
+metric-workers: 1
+export_heatmaps: false
+reuse_assignments: true
+
+r1-only: true
+save-assignment: true
+subconfigs:
+- restrictive_aa_sib_ctip
+- restrictive_aa_sib_ctip_reserves
+- restrictive_aa_sib_no_ctip
+- restrictive_aa_sib_no_ctip_reserves
+utility-model:
+  enable: false
+  designate-lp-for-all: false
+  list-length: "7"   # required by the schema; inert while disabled

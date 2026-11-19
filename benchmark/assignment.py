@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import copy
+import csv
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
 from pathlib import Path
+import shutil
+import tempfile
 from typing import Any, Mapping
 
 from assignment.generated_zones import (
@@ -21,12 +28,25 @@ from benchmark.config import (
     stable_hash,
 )
 from benchmark.results import discover_run_dirs
-from benchmark.runner import MANIFEST_FILENAME, load_manifest, load_solutions
+from benchmark.runner import (
+    MANIFEST_FILENAME,
+    load_manifest,
+    load_solutions,
+    write_json,
+)
 from metrics.base import MetricsContext, is_iterative_strategy, stage_names
 from optimization.config import OptimizationConfig
 from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 
+
+#: Folder of a run that holds the run's own matching: the raw assignments, the
+#: reports averaged over its lotteries (``aggregate_metrics/``), and heatmaps.
+MATCHING_DIRNAME = "matching"
+#: Written last by :func:`run_task_matching`; a run without it is unmatched.
+MATCHING_COMPLETE_FILENAME = "matching_complete.json"
+MATCHING_SCHEMA_VERSION = 1
+AGGREGATE_METRICS_DIRNAME = "aggregate_metrics"
 
 @dataclass
 class AssignmentBatchResult:
@@ -202,6 +222,8 @@ def clear_assignment_targets(output_dir: str | Path) -> None:
     for folder in (root, *root.glob("stages/*")):
         (folder / GENERATED_ZONE_FILENAME).unlink(missing_ok=True)
         (folder / SKIP_MARKER_FILENAME).unlink(missing_ok=True)
+    # The run's own matching belongs to the zoning being replaced.
+    clear_run_matching(root)
 
 
 def mark_missing_targets_skipped(
@@ -283,10 +305,14 @@ def assignment_targets(
                 )
                 for stage in load_manifest(root).get("stages", [])
             )
+        # A run optimized for one matching policy is matched under that policy
+        # alone; one without is matched under every policy of the config.
+        policy = task.config.get("matching_policy")
         for suffix, folder, level in folders:
             targets.append(
                 {
                     "id": f"{task.task_id}-{suffix}",
+                    **({"policies": [policy]} if policy is not None else {}),
                     "zone_file": str((folder / GENERATED_ZONE_FILENAME).resolve()),
                     "skip_marker": str((folder / SKIP_MARKER_FILENAME).resolve()),
                     "zone_building_blocks": zone_building_blocks(
@@ -442,3 +468,258 @@ def zone_building_blocks(unit: str) -> str:
         }[unit]
     except KeyError as exc:
         raise ValueError(f"Unsupported assignment unit: {unit}") from exc
+
+
+# --- Per-run matching ------------------------------------------------------
+#
+# On Slurm a run is matched inside its optimization allocation, right after
+# its evaluation, into its own folder. A run is matched under its own targets
+# only, and every averaged report groups by ``config_name``
+# (``<target id>:<policy>/<variant>``), so a run's reports are complete on
+# their own and the sweep's reports are its runs' reports, concatenated.
+
+
+def matching_dir(output_dir: str | Path) -> Path:
+    """The folder a run's own matching is written to."""
+    return Path(output_dir) / MATCHING_DIRNAME
+
+
+def clear_run_matching(output_dir: str | Path) -> None:
+    """Remove a run's own matching, its completion marker first."""
+    folder = matching_dir(output_dir)
+    (folder / MATCHING_COMPLETE_FILENAME).unlink(missing_ok=True)
+    if folder.is_dir():
+        shutil.rmtree(folder)
+
+
+def _file_sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _matching_identity(task: BenchmarkTask, matching: MatchingRunConfig) -> dict:
+    """What a run's matching was computed from; any change means rematching."""
+    config_path = Path(str(matching.config)).expanduser().resolve()
+    return {
+        "schema_version": MATCHING_SCHEMA_VERSION,
+        "task_id": task.task_id,
+        "config_hash": task.config_hash,
+        "matching_config": str(config_path),
+        "matching_config_sha256": _file_sha256(config_path),
+        "compute_stage_assignments": bool(matching.compute_stage_assignments),
+    }
+
+
+def _read_matching_marker(output_dir: str | Path) -> dict | None:
+    path = matching_dir(output_dir) / MATCHING_COMPLETE_FILENAME
+    try:
+        with path.open(encoding="utf-8") as stream:
+            marker = json.load(stream)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return marker if isinstance(marker, dict) else None
+
+
+def matching_complete(task: BenchmarkTask, matching: MatchingRunConfig) -> bool:
+    """Whether the run's own matching is done, for its zoning and this config."""
+    marker = _read_matching_marker(task.output_dir)
+    if marker is None or marker.get("status") not in {"complete", "skipped"}:
+        return False
+    try:
+        identity = _matching_identity(task, matching)
+    except OSError:
+        return False
+    return all(marker.get(key) == value for key, value in identity.items())
+
+
+def run_task_matching(task: BenchmarkTask, matching: MatchingRunConfig) -> str:
+    """Match one evaluated run into its own folder; return the marker status.
+
+    The run's earlier matching is removed first, so the folder holds exactly
+    this matching. A run evaluated without matching gets its root target
+    rebuilt from its saved zoning (:func:`prepare_assignment_targets`); a run
+    with no eligible target (an error, an infeasible stage) is marked
+    ``skipped``. The marker is written last, so a run interrupted mid-match
+    is matched again.
+    """
+    if not matching.config:
+        raise ValueError("Assignment execution requires matching.config.")
+    root = Path(task.output_dir)
+    clear_run_matching(root)
+    prepare_assignment_targets([task], [], matching)
+    targets = assignment_targets([task], matching, planned_stages=False)
+    ready = [
+        target
+        for target in targets
+        if Path(target["zone_file"]).is_file()
+        and not Path(target["skip_marker"]).exists()
+    ]
+    folder = matching_dir(root)
+    if ready:
+        run_generated_zone_assignments(
+            matching.config,
+            ready,
+            assignment_folder=folder,
+            workers=1,
+        )
+    status = "complete" if ready else "skipped"
+    write_json(
+        str(folder / MATCHING_COMPLETE_FILENAME),
+        {
+            **_matching_identity(task, matching),
+            "status": status,
+            "targets": [target["id"] for target in ready],
+            "completed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        },
+    )
+    return status
+
+
+def aggregate_matching_metrics(
+    root_folder: str | Path, assignment_dir: str
+) -> dict[str, int] | None:
+    """Rebuild the sweep's ``metrics_*.csv`` from its runs' own reports.
+
+    Writes ``<root>/<assignment_dir>/aggregate_metrics/`` (where the old
+    downstream assignment jobs published them) from every run whose matching
+    is complete. Each report is the runs' reports concatenated in
+    ``config_name`` order: the rows and text the downstream finalizer wrote,
+    which sorted by the grouping columns, ``config_name`` first, with each
+    run's file already sorted that way. Rows are streamed a run at a time, so
+    memory stays flat however many runs there are, and the files are rebuilt
+    from scratch each time, so a rerun or resume is idempotent. Returns each
+    report's row count, or ``None`` (writing nothing) while no run has
+    reports.
+    """
+    from assignment.student_assignment.market_generator.school_choice_market_generator import (
+        MarketGenerator,
+    )
+
+    files = MarketGenerator.AGGREGATE_METRIC_FILES
+    root = Path(root_folder).expanduser().resolve()
+    sources: dict[str, list[Path]] = {name: [] for name in files}
+    matched_runs = 0
+    for run_dir in discover_run_dirs(str(root)):
+        marker = _read_matching_marker(run_dir)
+        if marker is None or marker.get("status") != "complete":
+            continue
+        metrics_dir = matching_dir(run_dir) / AGGREGATE_METRICS_DIRNAME
+        found = False
+        for name, filename in files.items():
+            if (metrics_dir / filename).is_file():
+                sources[name].append(metrics_dir / filename)
+                found = True
+        matched_runs += found
+    if not matched_runs:
+        return None
+
+    output_root = root / assignment_dir
+    output_root.mkdir(parents=True, exist_ok=True)
+    output_dir = output_root / AGGREGATE_METRICS_DIRNAME
+    staging_dir = Path(
+        tempfile.mkdtemp(prefix="aggregate_metrics.tmp.", dir=output_root)
+    )
+    try:
+        row_counts = {
+            name: _concatenate_metric_csvs(paths, staging_dir / files[name])
+            for name, paths in sources.items()
+            if paths
+        }
+        with (staging_dir / MarketGenerator.AGGREGATE_MANIFEST_FILENAME).open(
+            "w", encoding="utf-8"
+        ) as stream:
+            json.dump(
+                {
+                    "source": f"<run>/{MATCHING_DIRNAME}/{AGGREGATE_METRICS_DIRNAME}",
+                    "runs": matched_runs,
+                    "row_counts": row_counts,
+                },
+                stream,
+                indent=2,
+                sort_keys=True,
+            )
+            stream.write("\n")
+        backup_dir = None
+        if output_dir.exists() or output_dir.is_symlink():
+            backup_dir = Path(
+                tempfile.mkdtemp(prefix="aggregate_metrics.previous.", dir=output_root)
+            )
+            backup_dir.rmdir()
+            output_dir.replace(backup_dir)
+        try:
+            staging_dir.replace(output_dir)
+        except Exception:
+            if backup_dir is not None and backup_dir.exists():
+                backup_dir.replace(output_dir)
+            raise
+        if backup_dir is not None and backup_dir.exists():
+            shutil.rmtree(backup_dir)
+    finally:
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
+    return row_counts
+
+
+def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
+    """Concatenate per-run metric CSVs in ``config_name`` order, row by row.
+
+    Columns are the union of the runs' headers in first-seen order (the
+    finalizer's rule); a run missing a column gets an empty cell, which is how
+    pandas writes a missing value. Fields go back out through the csv module
+    pandas writes with, so every value keeps its text. Returns the row count.
+    """
+    sources = []
+    for path in paths:
+        with path.open(newline="", encoding="utf-8") as stream:
+            reader = csv.reader(stream)
+            header = next(reader, None)
+            first = next(reader, None)
+        if header is None:
+            continue
+        if "config_name" not in header:
+            raise ValueError(f"{path} has no config_name column.")
+        key = "" if first is None else first[header.index("config_name")]
+        sources.append((key, str(path), header))
+    sources.sort()
+    columns = list(
+        dict.fromkeys(column for _key, _path, header in sources for column in header)
+    )
+    rows = 0
+    previous = None
+    with output.open("w", newline="", encoding="utf-8") as out:
+        writer = csv.writer(out, lineterminator="\n")
+        writer.writerow(columns)
+        for _key, path, header in sources:
+            config_index = header.index("config_name")
+            positions = (
+                None
+                if header == columns
+                else [
+                    header.index(column) if column in header else None
+                    for column in columns
+                ]
+            )
+            with open(path, newline="", encoding="utf-8") as stream:
+                reader = csv.reader(stream)
+                next(reader)
+                for row in reader:
+                    name = row[config_index]
+                    if previous is not None and name < previous:
+                        raise ValueError(
+                            f"Run metric reports interleave config names ({name!r} "
+                            f"after {previous!r} in {path}), so they cannot be "
+                            "concatenated in order."
+                        )
+                    previous = name
+                    writer.writerow(
+                        row
+                        if positions is None
+                        else ["" if index is None else row[index] for index in positions]
+                    )
+                    rows += 1
+        out.flush()
+        os.fsync(out.fileno())
+    return rows

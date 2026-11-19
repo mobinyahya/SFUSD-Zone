@@ -31,6 +31,7 @@ class PriorityGenerator:
             str(zone_file),
             self.market.config.get("restrict-zone"),
             self.market.config.get("sibling-access"),
+            self.market.config.get("tk-access", False),
             tuple(self.market.config.get("citywide-or-lp", [])),
             self.market.config.get("zone-building-blocks"),
         )
@@ -266,7 +267,8 @@ class PriorityGenerator:
         out-of-zone feeder is zeroed and then penalised however large the
         boost was. Under a zone policy the block wins and the promote falls
         through to the attendance-area append, which is the intended policy
-        effect rather than something to tune around.
+        effect rather than something to tune around -- unless the policy sets
+        ``tk-access: true``, which makes the feeder zone-eligible.
         """
         weight = self.market.config["priority-weights"].get("promote", 0)
         if not weight:

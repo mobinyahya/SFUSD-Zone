@@ -2006,6 +2006,7 @@ class MarketGenerator(SchoolChoiceMarket):
         else:
             evaluator.overscribe_aa = self.config.get("overscribe_aa", False)
             evaluator.update_assignments(assignment_df)
+        evaluator.metric_workers = int(self.config.get("metric-workers", 1))
         variant_name = self._metric_variant_name(save_name, iteration)
         config_name = f"{self.config.get('subconfig-name', 'default')}/{variant_name}"
         if export_metrics:
@@ -2013,6 +2014,7 @@ class MarketGenerator(SchoolChoiceMarket):
             reports = evaluator.eval_aggregate_metric_reports(
                 config_name,
                 include_local_metrics=include_local_metrics,
+                include_area_metrics=self.config.get("export-area-metrics", True),
             )
             if include_local_metrics:
                 reports["zone"] = self._zone_metric_report(

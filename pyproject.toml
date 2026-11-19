@@ -16,6 +16,7 @@ dependencies = [
     "kahip>=3.22",
     "matplotlib>=3.10.8",
     "networkx>=3.6.1",
+    "numba>=0.68.1",
     "numpy>=2.4.0",
     "omegaconf>=2.3.1",
     "openpyxl>=3.1.5",

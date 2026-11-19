@@ -293,7 +293,7 @@ def _heuristic_domains(
 
 
 def _welfare_solver(problem: ZoneProblem, method: str, options: Mapping[str, Any]):
-    from optimization.data.mid import build_mid_market
+    from optimization.data.mid import build_mid_market, require_label_access
     from optimization.solvers.mid import MidCpIntSolver, MidCpSatSolver
 
     if problem.program_population != "All":
@@ -304,6 +304,7 @@ def _welfare_solver(problem: ZoneProblem, method: str, options: Mapping[str, Any
         )
     start = time.perf_counter()
     market = build_mid_market(problem, problem.optimization_config)
+    require_label_access(market, f"The {method} matching_welfare model")
     preprocessing_seconds = time.perf_counter() - start
     if market.utility_student_count == 0:
         raise ValueError(
@@ -321,6 +322,56 @@ def _welfare_solver(problem: ZoneProblem, method: str, options: Mapping[str, Any
         ),
         **options,
     )
+
+
+#: Methods whose solve builds a model cost an incumbent may overstate.
+MODEL_COST_METHODS = frozenset({"cp_bool", "cp_int", "mip"})
+#: Objectives whose reported value is recomputed from the returned zoning.
+RECOMPUTED_OBJECTIVES = frozenset(
+    {"cut_edges", "boundary_perimeter", "school_distance", "average_distance"}
+)
+
+
+def report_model_objective(problem: ZoneProblem, solution: ZoneSolution) -> None:
+    """Report the exact objective of the returned zoning, not the solver's.
+
+    Neither CP-SAT nor the MIP forces a cut-edge indicator off, so a solve
+    stopped early can return an incumbent whose model value exceeds the
+    boundary cost of its zoning; CP-SAT also rounds distance coefficients
+    to ``1/CP_SAT_SCALE``. ``solution.objective`` becomes
+    :meth:`ZoneProblem.model_objective` of the assignment and the solver's
+    value moves to ``metadata["solver_objective"]``. Every solver-progress
+    entry is recomputed from its own assignment the same way, so the last
+    entry matches the reported objective. What the solver optimizes is
+    unchanged, and so are its stopping rules (a relative gap is still taken
+    in solver units).
+    """
+    if not solution.feasible or solution.objective is None or not solution.assignment:
+        return
+    if problem.choice_objective is not None:
+        return
+    solver_value = float(solution.objective)
+    solution.objective = problem.model_objective(solution.assignment)
+    solution.metadata["solver_objective"] = solver_value
+    if solution.solver_progress:
+        nodes = tuple(problem.nodes)
+        costs = (
+            problem.distance_objective_costs()
+            if problem.model_cost != "cut_edges"
+            else None
+        )
+
+        def value(zones) -> float:
+            assignment = dict(zip(nodes, zones))
+            if costs is None:
+                return problem.model_objective(assignment)
+            return float(sum(costs[zone, node] for node, zone in assignment.items()))
+
+        solution.solver_progress = [
+            replace(entry, objective=value(entry.assignment))
+            for entry in solution.solver_progress
+        ]
+        solution.metadata["solver_progress_objective"] = "model_objective"
 
 
 def solve_objective(
@@ -382,6 +433,8 @@ def solve_objective(
         # Every solver's own ``solve`` honors ``problem.objective``.
         solver = solver if solver is not None else get_solver(method, **options)
         solution = solver.solve(problem)
+    if method in MODEL_COST_METHODS and objective in RECOMPUTED_OBJECTIVES:
+        report_model_objective(problem, solution)
     solution.metadata.update(
         method=method, objective=objective, objective_maximize=spec.maximize
     )

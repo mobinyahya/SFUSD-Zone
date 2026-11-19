@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 from optimization.data.initial_solutions import initial_solution
-from optimization.data.mid import build_mid_market
+from optimization.data.mid import build_mid_market, require_label_access
 from optimization.solvers.mid import MidCpSatSolver
 from optimization.strategies.base import Strategy, register
 
@@ -33,6 +33,7 @@ class MidStrategy(Strategy):
 
         start = time.perf_counter()
         market = build_mid_market(problem, dataset.config)
+        require_label_access(market, "The mid strategy")
         preprocessing_seconds = time.perf_counter() - start
         mid_solver = MidCpSatSolver(
             market,

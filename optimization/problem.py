@@ -404,6 +404,22 @@ class ZoneProblem:
             else self.school_distance_costs()
         )
 
+    def model_objective(self, assignment) -> float:
+        """The exact value of the CP/MIP model cost at ``assignment``.
+
+        Boundary cost (cut edges, or integer metres when ``weight_edges``)
+        for a ``cut_edges`` model cost, otherwise the unrounded distance
+        coefficients summed over the assignment. A solver's own objective can
+        differ: CP-SAT rounds distance coefficients, and neither model forces
+        a cut-edge indicator off, so an incumbent can carry a slack one.
+        """
+        if self.model_cost != "cut_edges":
+            costs = self.distance_objective_costs()
+            return float(sum(costs[zone, node] for node, zone in assignment.items()))
+        from optimization.data.edge_weights import boundary_cost
+
+        return float(boundary_cost(self.G, assignment, weighted=self.weight_edges))
+
     def distance_objective_metadata(self) -> dict:
         metadata = {"objective_kind": self.model_cost}
         if self.model_cost == "average_distance":

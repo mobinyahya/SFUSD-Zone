@@ -17,6 +17,17 @@ from loaders.config import BASE_CONFIG_PATH
 TRANSFER_YEARS = ("2425", "2526", "2627")
 PER_YEAR_SCENARIOS = tuple(f"sfusd-{year}" for year in TRANSFER_YEARS)
 POOLED_SCENARIO = "sfusd-2425-2627"
+#: Years whose registry reads the tables gap-filled from the district's full
+#: student file (analysis/data_prep/fill_from_full_student_file.py).
+FULL_FILE_YEARS = {"2627"}
+
+
+def _source(year: str) -> str:
+    return ".full_file" if year in FULL_FILE_YEARS else ""
+
+
+def _stem(year: str) -> str:
+    return "_with_full_file" if year in FULL_FILE_YEARS else ""
 
 
 @pytest.fixture(scope="module")
@@ -33,8 +44,12 @@ def test_registry_year_offers_both_populations_and_three_grades(base, year):
     # 2026-27 adds the CBEDS populations; every year has the two required ones.
     cbeds = {"enrolled_all", "applied_or_enrolled"} if year == "2627" else set()
     assert set(optimization) == {"applicant", "enrolled", *cbeds}
-    assert optimization["applicant"] == f"optimization.students.applicant.{year}"
-    assert optimization["enrolled"] == f"optimization.students.enrolled.{year}"
+    assert optimization["applicant"] == (
+        f"optimization.students.applicant.{year}{_source(year)}"
+    )
+    assert optimization["enrolled"] == (
+        f"optimization.students.enrolled.{year}{_source(year)}"
+    )
     assert set(optimization.values()) <= catalog
 
     assignment = entry["assignment"]
@@ -108,7 +123,9 @@ def test_per_year_scenario_selects_only_that_year(year):
     assert list(scenario.filter("optimization", "years")) == [year]
     assert scenario.filter("assignment", "year") == year
     students = scenario.sources("optimization.students")
-    assert [source.path.name for source in students] == [f"student_{year}.csv"]
+    assert [source.path.name for source in students] == [
+        f"student_{year}{_stem(year)}.csv"
+    ]
 
 
 def test_pooled_scenario_pools_optimization_and_assigns_on_the_newest_year():
@@ -117,7 +134,7 @@ def test_pooled_scenario_pools_optimization_and_assigns_on_the_newest_year():
     assert scenario.filter("assignment", "year") == TRANSFER_YEARS[-1]
     assert [
         source.path.name for source in scenario.sources("optimization.students")
-    ] == [f"student_{year}.csv" for year in TRANSFER_YEARS]
+    ] == [f"student_{year}{_stem(year)}.csv" for year in TRANSFER_YEARS]
 
 
 @pytest.mark.parametrize("name", PER_YEAR_SCENARIOS + (POOLED_SCENARIO,))
@@ -175,4 +192,6 @@ def test_the_enrolled_population_is_registered_as_its_own_file(base):
         entry = base["school_years"][year]
         enrolled = entry["optimization"]["students"]["enrolled"]
         assert entry["assignment"]["students"]["enrolled"] == enrolled
-        assert base["files"][enrolled]["path"] == f"Data/Cleaned/enrolled_{year}.csv"
+        assert base["files"][enrolled]["path"] == (
+            f"Data/Cleaned/enrolled_{year}{_stem(year)}.csv"
+        )

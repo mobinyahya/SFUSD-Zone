@@ -411,8 +411,21 @@ def optimization_config_hash(
         semantic.pop("release_paths")
     if semantic.get("keep_centroid_radius") is None:
         semantic.pop("keep_centroid_radius", None)
+    # Contraction is exact: on (the default) it changes no task id.
+    if semantic.get("contract_fixed") is True:
+        semantic.pop("contract_fixed")
+    # Unrestricted boundary domains are what every run before the setting
+    # solved; the default (4 hops) is a different model and a new task id.
+    if semantic.get("boundary_domain_hops", 0) is None:
+        semantic.pop("boundary_domain_hops")
     if semantic.get("objective_weights") is None:
         semantic.pop("objective_weights", None)
+    # The status-quo market, and the lottery settings only a matching_policy
+    # market reads, keep the task ids of runs from before they existed.
+    if semantic.get("matching_policy") is None:
+        semantic.pop("matching_policy", None)
+        semantic.pop("mid_lottery_seed", None)
+        semantic.pop("mid_lotteries", None)
     if semantic.get("hint_zoning") is None:
         semantic.pop("hint_zoning", None)
     elif semantic["hint_zoning"] == ATTENDANCE_AREA_HINT:

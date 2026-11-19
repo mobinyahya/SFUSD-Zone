@@ -126,6 +126,99 @@ class _FullReportAggregates:
     overage: float
 
 
+#: Student columns the full report never reads (none is named in this module;
+#: dropping each one alone leaves every per-ZIP report unchanged on the 2026-27
+#: data). Each per-area report filters its students hundreds of times, and a
+#: pandas filter copies every column, so the area reports drop these first.
+_AREA_REPORT_UNUSED_COLUMNS = frozenset(
+    {
+        "grade",
+        "r1_listed_ranks",
+        "r1_randomnumber",
+        "r1_cohortstring",
+        "r1_designation_randomnumber",
+        "bayview_to_all_ms",
+        "brown_ms_to_hs",
+        "bayview_to_brown_ms",
+        "requestprogramdesignation",
+        "previous_pathway",
+        "msf",
+        "r1_idschool",
+        "r1_programcode",
+        "r1_rank",
+        "r1_isdesignation",
+        "r1_distance",
+        "enrolled_idschool",
+        "homelang",
+        "englprof",
+        "sped",
+        "final_school",
+        "num_ranked",
+        "Academic Score",
+        "AALPI Score",
+        "HOCidx1",
+        "sibling",
+        "currentlpsibling",
+        "currentlp",
+        "aaprek",
+        "prek",
+        "lowell_ranked",
+        "sota_ranked",
+        "promote_eligible",
+        "promote",
+        "feeder_school",
+        "feeder_program",
+        "pref_source",
+        "mr_applicant",
+        "first_participating_round",
+        "first_participating_round_ordinal",
+        "selected_listed_ranks",
+        "selected_randomnumber",
+        "selected_cohortstring",
+        "selected_designation_randomnumber",
+        "attendance_area_source",
+        "assignment_schema_version",
+        "rank_basis",
+        "submitted_rank",
+        "rank_excluding_promotion",
+        "utility_rank",
+        "In-Zone Rank",
+    }
+)
+
+
+_AREA_STATE = None
+
+
+def _area_rows_chunk(indices):
+    evaluator, groups, output_column = _AREA_STATE
+    return [
+        (index, evaluator._area_row(*groups[index], output_column)) for index in indices
+    ]
+
+
+def _area_rows_in_parallel(evaluator, groups, output_column, workers):
+    """``_area_row`` for every group across ``workers`` forked processes.
+
+    The same code runs on the same data, so the rows are those the serial loop
+    returns, in the same order. Groups are dealt largest first so the
+    processes finish together; the children read the evaluator through fork.
+    """
+    import multiprocessing as mp
+
+    global _AREA_STATE
+    order = sorted(range(len(groups)), key=lambda i: -len(groups[i][1]))
+    chunks = [order[k::workers] for k in range(workers)]
+    _AREA_STATE = (evaluator, groups, output_column)
+    try:
+        with mp.get_context("fork").Pool(workers) as pool:
+            results = pool.map(_area_rows_chunk, chunks)
+    finally:
+        _AREA_STATE = None
+    rows = dict(row for chunk in results for row in chunk)
+    return [rows[index] for index in range(len(groups))]
+
+
 class MatchEvaluator:
     #: Zone building block -> (school column, student column) naming its areas.
     AREA_COLUMNS = {
@@ -1170,9 +1263,7 @@ class MatchEvaluator:
             return np.nan
         frl = pd.to_numeric(assigned_students["frl"], errors="coerce").fillna(0.0)
         by_school = (
-            pd.DataFrame(
-                {"school": assigned_students["assigned school"], "frl": frl}
-            )
+            pd.DataFrame({"school": assigned_students["assigned school"], "frl": frl})
             .groupby("school")["frl"]
             .agg(["sum", "size"])
         )
@@ -2509,25 +2600,40 @@ class MatchEvaluator:
             )
 
         rows = []
-        students_with_geography = self.student_data[supplied].assign(
+        columns = [
+            column
+            for column in self.student_data.columns
+            if column not in _AREA_REPORT_UNUSED_COLUMNS or column == source_column
+        ]
+        students_with_geography = self.student_data.loc[supplied, columns].assign(
             _aggregate_geography=geography[supplied].astype("int64")
         )
-        for area, students in students_with_geography.groupby(
-            "_aggregate_geography", sort=True
-        ):
-            students = students.drop(columns="_aggregate_geography")
-            aggregates = self._prepare_full_report_aggregates(students)
-            rows.append(
-                {
-                    output_column: area,
-                    **self._eval_assignment_full_from_aggregates(aggregates).to_dict(),
-                }
+        groups = [
+            (area, students.drop(columns="_aggregate_geography"))
+            for area, students in students_with_geography.groupby(
+                "_aggregate_geography", sort=True
             )
+        ]
+        workers = min(int(getattr(self, "metric_workers", 1) or 1), len(groups))
+        if workers > 1:
+            rows = _area_rows_in_parallel(self, groups, output_column, workers)
+        else:
+            rows = [
+                self._area_row(area, students, output_column)
+                for area, students in groups
+            ]
         if rows:
             return pd.DataFrame(rows)
         if metric_columns is None:
             metric_columns = self.eval_assignment_full().index.tolist()
         return pd.DataFrame(columns=[output_column, *metric_columns])
+
+    def _area_row(self, area, students, output_column):
+        aggregates = self._prepare_full_report_aggregates(students)
+        return {
+            output_column: area,
+            **self._eval_assignment_full_from_aggregates(aggregates).to_dict(),
+        }
 
     def eval_assignment_metrics_by_zip_code(self):
         """Return the complete full report for each student ZIP code."""
@@ -2561,8 +2667,15 @@ class MatchEvaluator:
             }
         ).reset_index(drop=True)
 
-    def eval_aggregate_metric_reports(self, config_name, *, include_local_metrics=True):
-        """Return citywide and, when requested, local reports for one assignment."""
+    def eval_aggregate_metric_reports(
+        self, config_name, *, include_local_metrics=True, include_area_metrics=True
+    ):
+        """Return citywide and, when requested, local reports for one assignment.
+
+        ``include_area_metrics=False`` leaves the per-ZIP and per-attendance-area
+        reports empty: each recomputes the whole full report once per area,
+        which is nearly all of the evaluation's time.
+        """
         if self._distance_cache is None:
             raise ValueError(
                 "Aggregate assignment metrics require the cached "
@@ -2599,10 +2712,14 @@ class MatchEvaluator:
                     ),
                     "zip_code": self._eval_assignment_full_by_group(
                         "zipcode", "zip_code", metric_columns
-                    ),
+                    )
+                    if include_area_metrics
+                    else pd.DataFrame(columns=["zip_code", *metric_columns]),
                     "attendance_area": self._eval_assignment_full_by_group(
                         "idschoolattendance", "attendance_area", metric_columns
-                    ),
+                    )
+                    if include_area_metrics
+                    else pd.DataFrame(columns=["attendance_area", *metric_columns]),
                 }
             )
         for report in reports.values():

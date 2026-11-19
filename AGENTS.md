@@ -222,7 +222,19 @@ zonings.json.xz          # Every stage: node + area assignment, status, full met
 solver_progress.json.xz  # Only with save_solver_progress: every stage's incumbents
 zoning_config.yaml       # The generating config, runnable by optimization.run as is
 stages/<stage>/          # Only assignment targets (assignment_zones.csv), when matching
+matching/                # Slurm sweeps with matching: this run's raw assignments,
+                         # aggregate_metrics/metrics_*.csv, heatmaps/, matching_complete.json
 ```
+
+On Slurm (`benchmark.slurm`), a matching-enabled sweep is matched inside its
+optimization allocations: each task runs optimize, evaluate, and match, each
+in a fresh process on the task's CPU, into its own `matching/` folder; the
+locked end-of-allocation aggregation rebuilds the sweep's
+`<assignment_dir>/aggregate_metrics/metrics_*.csv` by streaming the runs'
+reports. A plan is at most 12 jobs (`--mem-per-cpu=8G`), with no downstream
+assignment graph; with `skip_existing`, a run optimized but unmatched is
+planned for its matching alone. The local `benchmark.run` path still matches
+the whole sweep at once into `<assignment_dir>/`.
 
 `optimization/run_archive.py` owns the archive: area ids are stored once per
 unit and each stage only its zones, and LZMA's window folds the metadata stages
@@ -266,6 +278,8 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `frl_reference_dev` | `0.10` | Steps with a `capacity_reference` only: relative band on each zone's frozen school FRL count; negative disables |
 | `objective_weights` | `{capacity_match: 1, frl_dissimilarity: 10}` | `weighted_sum` terms (ReCom); `frl_dissimilarity` is in percentage points |
 | `seed` | `42` | Solver seed |
+| `boundary_domain_hops` | `4` | CP-SAT/MIP refinement steps with fixed nodes: a free block may take only its own source zone and those of blocks within this many hops, then pairs the closer-neighbour contiguity rows cannot satisfy are pruned exactly (`optimization/data/boundary_domain.py`); blocks within 2 hops of a source block breaking the closer rule stay unrestricted, and a still-infeasible step re-solves unrestricted; `null` = unrestricted (and drops out of task ids) |
+| `contract_fixed` | `true` | CP-SAT and MIP refinement steps with fixed nodes solve on a problem with each connected fixed group contracted to one node (`optimization/data/contraction.py`); exact, so `true` keeps task ids |
 
 **Pipeline refinement.** A step's `inputs` project an earlier step onto its
 level. `{mode: assign, select: interior, radius: r}` fixes every block
@@ -274,7 +288,10 @@ hops. `{mode: hint, select: boundary, radius: r}` warm-starts the band
 itself. Blocks within `keep_centroid_radius` hops of their school (default:
 the interior radius) stay fixed even inside the band. A fixed block with no
 same-zone neighbor closer to its school is released along one shortest path
-toward it (`release_paths: shortest`). `capacity_reference: <step>` replaces the
+toward it (`release_paths: shortest`). Free blocks are then limited to the
+zones within `boundary_domain_hops` (keeping their own source zone and every
+zone that release opened) and pruned to the zones a closer neighbour can
+support, before the hint and the contraction. `capacity_reference: <step>` replaces the
 capacity rows' counts with that step's MID match: each zone's AA GE residents
 against the seats its school used there, within `overage`/`shortage`. With
 `frl_reference_dev`, the same holds for FRL residents.

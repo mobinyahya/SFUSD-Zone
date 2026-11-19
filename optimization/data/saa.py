@@ -71,6 +71,11 @@ class SaaSample:
 def build_saa_market(problem: ZoneProblem, optimization_config) -> SaaMarket:
     """Build the individual market using MID's utility and access semantics."""
     source = build_mid_student_market(problem, optimization_config)
+    if source.policy is not None:
+        raise ValueError(
+            f"The SAA market does not model matching policy {source.policy!r}; "
+            "use it with ReCom objectives."
+        )
     return preprocess_saa_market(
         SaaMarket(
             programs=source.programs,

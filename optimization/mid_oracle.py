@@ -32,6 +32,17 @@ class MidSeparation:
     utility_gap_prefixes: tuple[tuple[int, int], ...]
 
 
+def _tier(program, node_zone, zoning, priorities, open_tiers, rank) -> int:
+    """The type's priority tier at ``rank`` under ``zoning``; -1: no access.
+
+    A citywide program, or a zoned one in the student's zone, is reached at
+    ``priorities``; a zoned one outside it at the policy's open tier, if any.
+    """
+    if program.citywide or node_zone == zoning[program.school_node]:
+        return priorities[rank]
+    return -1 if open_tiers is None else open_tiers[rank]
+
+
 def _types_by_program(market: MidMarket) -> dict[str, tuple[tuple[int, int], ...]]:
     """Index the ``(type, rank)`` pairs that reference each program."""
     index: dict[str, list[tuple[int, int]]] = {
@@ -64,14 +75,18 @@ def _program_demand_mass(
     for type_index, target_rank in ranked[program_id]:
         student_type = market.types[type_index]
         node_zone = zoning[student_type.node]
+        open_tiers = student_type.open_priorities
         remaining = lottery_scale
         for rank in range(target_rank + 1):
             ranked_id = student_type.programs[rank]
-            priority = student_type.priorities[rank]
             program = programs[ranked_id]
-            accessible = program.citywide or (node_zone == zoning[program.school_node])
-            threshold = max(cutoffs[ranked_id] - priority * lottery_scale, zero)
-            effective = threshold if accessible else lottery_scale
+            priority = _tier(
+                program, node_zone, zoning, student_type.priorities, open_tiers, rank
+            )
+            if priority < 0:
+                effective = lottery_scale
+            else:
+                effective = max(cutoffs[ranked_id] - priority * lottery_scale, zero)
             next_remaining = min(remaining, effective)
             if rank == target_rank:
                 total += student_type.count * (remaining - next_remaining)
@@ -93,13 +108,15 @@ def _fast_demand_masses(
         remaining = lottery_scale
         type_node_zone = zoning[student_type.node]
         count = student_type.count
-        for program_id, priority in zip(student_type.programs, student_type.priorities):
+        open_tiers = student_type.open_priorities
+        tiers = student_type.priorities
+        for rank, program_id in enumerate(student_type.programs):
             program = programs[program_id]
-            accessible = program.citywide or (
-                type_node_zone == zoning[program.school_node]
-            )
-            threshold = max(cutoffs[program_id] - priority * lottery_scale, 0)
-            effective = threshold if accessible else lottery_scale
+            priority = _tier(program, type_node_zone, zoning, tiers, open_tiers, rank)
+            if priority < 0:
+                effective = lottery_scale
+            else:
+                effective = max(cutoffs[program_id] - priority * lottery_scale, 0)
             next_remaining = min(remaining, effective)
             mass = remaining - next_remaining
             if mass > 0:
@@ -123,6 +140,11 @@ def finite_grid_oracle(
         raise ValueError("MID lottery scale must be a positive integer.")
     if lottery_scale <= 0:
         raise ValueError("MID lottery scale must be a positive integer.")
+    if market.lottery is not None:
+        raise ValueError(
+            "A matching-policy market is matched by optimization.lottery_da, "
+            "not by least cutoffs."
+        )
 
     upper = _cutoff_upper_bounds(market, lottery_scale)
     programs = market.programs
@@ -240,6 +262,8 @@ def continuum_oracle(
     """Return continuous least cutoffs with unit lottery mass."""
     if tolerance <= 0:
         raise ValueError("MID continuum tolerance must be positive.")
+    if market.lottery is not None:
+        raise ValueError("The continuum oracle does not model policy markets.")
     upper = _cutoff_upper_bounds(market, 1.0)
     cutoffs = {program.program_id: 0.0 for program in market.programs}
     program_by_id = market.program_by_id
@@ -303,6 +327,8 @@ def evaluate_cutoffs(
     lottery_scale: float,
 ) -> MidOracleResult:
     """Evaluate supplied cutoffs without changing them."""
+    if market.lottery is not None:
+        raise ValueError("Cutoffs do not describe a policy market's match.")
     return _evaluate(market, zoning, cutoffs, lottery_scale)
 
 
@@ -463,16 +489,22 @@ def _evaluate(
         assignments = []
         remainders = []
         type_fixed_point_terms = []
-        for rank, (program_id, priority) in enumerate(
-            zip(student_type.programs, student_type.priorities)
-        ):
+        node_zone = zoning[student_type.node]
+        for rank, program_id in enumerate(student_type.programs):
             program = programs[program_id]
-            accessible = program.citywide or (
-                zoning[student_type.node] == zoning[program.school_node]
+            priority = _tier(
+                program,
+                node_zone,
+                zoning,
+                student_type.priorities,
+                student_type.open_priorities,
+                rank,
             )
             zero = 0 if integral_grid else 0.0
-            threshold = max(cutoffs[program_id] - priority * lottery_scale, zero)
-            effective = threshold if accessible else lottery_scale
+            if priority < 0:
+                effective = lottery_scale
+            else:
+                effective = max(cutoffs[program_id] - priority * lottery_scale, zero)
             next_remaining = min(remaining, effective)
             mass = remaining - next_remaining
             assignments.append(mass)

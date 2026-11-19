@@ -45,6 +45,18 @@ enrolled, so no cleaned table changes. Its other differences are export noise:
 lower-case headers, two-digit years, coordinates rounded by at most 8e-6
 degrees, three mis-encoded street names, and three `RaceX` codes in scientific
 notation.
+
+`fill_from_full_student_file.py` then makes the corrected file a data source
+of its own: it writes `<table>_2627_with_full_file.csv` beside each of the four
+2026-27 student tables, with blanks filled from the file (ethnicity, home
+language, zip code, English proficiency, SPED, and location for students with
+no coordinates, plus their Census geography and Block indices) and every
+existing value kept. The 2026-27 registry reads these by default; the
+unfilled tables stay registered (`optimization.students.<population>.2627`,
+`assignment.students.2627`) for `overrides.sources`. On the
+`applied_or_enrolled` kindergarten market (Nov 13 baseline) the fill adds 84
+located students (4,227 -> 4,311) and cuts blank ethnicity from 752 to 180.
+`full_file_fill_report_2627.md` lists every count.
 CBEDS `SES` is also not used for FRL: only 17% of kindergartners are flagged,
 against about 50% in grades 1-12, because new kindergartners are not yet
 certified. FRL stays the block-level index or the `frl_estimate`.

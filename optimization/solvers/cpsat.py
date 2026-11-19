@@ -70,6 +70,54 @@ _AssignmentVars = dict[tuple[int, int], cp_model.IntVar]
 _ZoneVars = dict[int, cp_model.IntVar]
 
 
+def _complete_hint(model: cp_model.CpModel, budget: float) -> bool:
+    """Replace a model's hint with a full solution extending it, if one exists.
+
+    A hint usually fixes only the assignment variables. Solving a copy with
+    those fixed leaves just the auxiliary variables, which propagation all but
+    determines, and the solution found hints every variable. Spends at most a
+    tenth of ``budget``; returns whether the hint was completed.
+    """
+    hint = model.proto.solution_hint
+    if not len(hint.vars):
+        return False
+    probe = model.clone()
+    probe.clear_hints()
+    for index, value in zip(hint.vars, hint.values, strict=True):
+        probe.add(probe.get_int_var_from_proto_index(index) == value)
+    probe.clear_objective()
+    solver = cp_model.CpSolver()
+    solver.parameters.num_search_workers = 1
+    solver.parameters.max_time_in_seconds = max(1.0, 0.1 * float(budget))
+    if solver.solve(probe) not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return False
+    model.clear_hints()
+    for index in range(len(model.proto.variables)):
+        model.add_hint(
+            model.get_int_var_from_proto_index(index),
+            solver.value(probe.get_int_var_from_proto_index(index)),
+        )
+    return True
+
+
+def _feasible_hint(problem: ZoneProblem) -> dict[int, int] | None:
+    """The problem's hint with its fixed nodes, when that is a feasible zoning."""
+    from optimization.data.feasibility import check_zoning
+
+    candidate = dict(problem.hint or {})
+    candidate.update(problem.fixed or {})
+    if set(candidate) != set(problem.nodes):
+        return None
+    if not check_zoning(problem, candidate).feasible:
+        return None
+    return {int(node): int(zone) for node, zone in candidate.items()}
+
+
+def _assignment_objective(problem: ZoneProblem, assignment) -> float:
+    """The CP model's objective at ``assignment``, unscaled."""
+    return problem.model_objective(assignment)
+
+
 class _CpSatProgressCallback(cp_model.CpSolverSolutionCallback):
     def __init__(
         self,
@@ -356,6 +404,24 @@ class _CpSatSolver(Solver):
         self._configure_solver_parameters(
             solver, enumerate_solutions=solution_limit is not None
         )
+        single_worker_lns = (
+            solution_limit is None
+            and solver.parameters.num_search_workers == 1
+            and bool(problem.hint)
+            and self.options.get("cp_sat_single_worker_lns", True)
+        )
+        if single_worker_lns:
+            # One worker runs only the default search, which on a large
+            # refinement can spend its whole budget without completing the
+            # hint. Interleaving the subsolvers in that one thread and
+            # searching by neighbourhoods of the hinted zoning instead finds
+            # and improves solutions (a Block_0 refinement: none in 600 s
+            # otherwise, a 46% better objective in 60 s with it). The search
+            # starts from the hint only once every variable is hinted, so the
+            # auxiliary (cut-edge, contiguity) variables are completed first.
+            solver.parameters.interleave_search = True
+            solver.parameters.use_lns_only = True
+            _complete_hint(m, solver.parameters.max_time_in_seconds)
         log_path = self._next_solver_log_path(problem)
         log_file = None
         if log_path:
@@ -411,16 +477,33 @@ class _CpSatSolver(Solver):
 
         assignment = {}
         objective = None
+        hint_fallback = False
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             assignment = self._extract_assignment(solver, problem, x, y)
             if not feasibility_only:
                 objective = solver.ObjectiveValue() / objective_scale
+        elif status_name == "UNKNOWN" and problem.choice_objective is None:
+            fallback = _feasible_hint(problem)
+            if fallback is not None:
+                # CP-SAT can run out of time before completing a hint it was
+                # given (one worker has no hint-completion subsolver). A
+                # refinement started from a feasible zoning keeps it.
+                assignment, status_name, hint_fallback = fallback, "FEASIBLE", True
+                if not feasibility_only:
+                    objective = _assignment_objective(problem, assignment)
 
         metadata = {
             "solver": self.name,
             **self._solver_log_metadata(log_path),
             **self._solver_progress_metadata(progress),
         }
+        if hint_fallback:
+            metadata["hint_fallback"] = True
+        if single_worker_lns:
+            metadata["cp_sat_single_worker_lns"] = True
+        proto = m.Proto()
+        metadata["cp_model_variables"] = len(proto.variables)
+        metadata["cp_model_constraints"] = len(proto.constraints)
         if problem.choice_objective is not None:
             metadata.update(
                 {

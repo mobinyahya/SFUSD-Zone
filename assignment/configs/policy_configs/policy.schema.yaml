@@ -1,5 +1,6 @@
 restrict-zone: bool(required=False) #or str() # Options: True, False, or 'CTIP_access'
 sibling-access: bool()
+tk-access: bool(required=False)  # A TK-to-K promote may enter their feeder program from outside its zone; defaults to false
 truncate-at-AA-GE: bool(required=False)
 designate: bool()
 designation-ordering-type: enum('in_zone', 'simple', required=False)  # Controls how designation programs are ordered, defaults to 'in_zone'

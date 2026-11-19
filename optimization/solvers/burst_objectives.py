@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import math
 import multiprocessing as mp
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
@@ -55,6 +55,8 @@ from optimization.data.mid import MidMarket, build_mid_market, preprocess_mid_ma
 from optimization.mid_oracle import MidOracleResult, finite_grid_oracle
 
 ZoningKey = tuple[tuple[int, int], ...]
+#: Outcomes a :class:`MidBatchEvaluator` keeps, most recently used.
+MID_OUTCOME_CACHE_SIZE = 256
 
 
 @dataclass(frozen=True)
@@ -294,6 +296,11 @@ def mid_outcome(
     lottery_scale: int,
     warm_cutoffs: Mapping[str, int] | None = None,
 ) -> MidOutcome:
+    if market.lottery is not None:
+        # A matching-policy market designates inside its own match.
+        from optimization.lottery_da import lottery_outcome
+
+        return lottery_outcome(market, zoning)
     result = finite_grid_oracle(
         market,
         dict(zoning),
@@ -354,7 +361,10 @@ class MidBatchEvaluator:
         self.lottery_scale = lottery_scale
         self.workers = workers
         self.seats = seats
-        self.cache: dict[ZoningKey, MidOutcome] = {}
+        # Bounded, most recently used last: the walk only re-reads its burst's
+        # base zoning and repeats within a batch, and every key holds a whole
+        # zoning, so an unbounded cache grows by GBs over a long walk.
+        self.cache: OrderedDict[ZoningKey, MidOutcome] = OrderedDict()
         self.executor = self._make_executor() if workers > 1 else None
 
     def _make_executor(self) -> ProcessPoolExecutor:
@@ -389,16 +399,22 @@ class MidBatchEvaluator:
         warm_cutoffs = None if base is None else base.cutoffs
         uncached = tuple(dict.fromkeys(key for key in keys if key not in self.cache))
 
+        found = {key: self.cache[key] for key in keys if key in self.cache}
         if self.executor is not None and len(uncached) > 1:
             args = tuple((key, self.lottery_scale, warm_cutoffs) for key in uncached)
             for key, outcome in self.executor.map(_outcome_in_worker, args):
-                self.cache[key] = outcome
+                found[key] = outcome
         else:
             for key in uncached:
-                self.cache[key] = mid_outcome(
+                found[key] = mid_outcome(
                     self.market, self.seats, dict(key), self.lottery_scale, warm_cutoffs
                 )
-        return tuple(self.cache[key] for key in keys)
+        for key in keys:
+            self.cache[key] = found[key]
+            self.cache.move_to_end(key)
+        while len(self.cache) > MID_OUTCOME_CACHE_SIZE:
+            self.cache.popitem(last=False)
+        return tuple(found[key] for key in keys)
 
     def __call__(
         self,
@@ -471,7 +487,7 @@ class MidBurstScorer:
     def describe(self, assignment: Mapping[int, int]) -> dict[str, float]:
         """Breakdown of a partition this scorer has already scored."""
 
-        outcome = self.evaluator.cache[self.evaluator.key(assignment)]
+        (outcome,) = self.evaluator.outcomes((assignment,), None)
         return {
             "best_welfare": outcome.welfare,
             "best_unassigned_students": outcome.unassigned,

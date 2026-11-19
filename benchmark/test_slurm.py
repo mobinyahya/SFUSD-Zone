@@ -10,9 +10,6 @@ from pathlib import Path
 import subprocess
 
 import pytest
-import yaml
-
-from assignment.run_custom_config import load_custom_config
 
 from benchmark.config import (
     BenchmarkTask,
@@ -34,6 +31,7 @@ from benchmark.runner import (
 from benchmark.slurm import (
     MAX_SLURM_JOBS,
     MAX_SUBMITTED_SLURM_JOBS,
+    SlurmAllocation,
     SlurmPlan,
     _build_parser,
     _plan_allocations,
@@ -74,6 +72,7 @@ def test_submission_script_has_required_directives(tmp_path):
     assert script.count("sbatch --parsable -A soal -p soal") == 1
     assert script.count("--ntasks=1") == 1
     assert "--cpus-per-task=4" in script
+    assert script.count("--mem-per-cpu=8G") == 1
     assert "--export=ALL,OMP_NUM_THREADS=1" in script
     assert "benchmark_job_0=$(sbatch" in script
     assert "--dependency" not in script
@@ -85,45 +84,23 @@ def test_submission_script_has_required_directives(tmp_path):
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
 
 
-def test_submission_script_queues_nine_dependent_assignment_jobs(tmp_path):
-    from assignment.slurm import build_generated_zone_slurm_plan
-
+def test_matching_plan_submits_only_its_allocations(tmp_path):
     assignment_config = (
         Path(__file__).parents[1] / "assignment/configs/8-19-choice.yaml"
-    )
-    target = tmp_path / "run"
-    assignment_plan, assignment_plan_path = build_generated_zone_slurm_plan(
-        assignment_config,
-        [
-            {
-                "id": "run-root",
-                "zone_file": str(target / "assignment_zones.csv"),
-                "skip_marker": str(target / ".assignment-skipped"),
-                "zone_building_blocks": "block_group",
-                "geography_vintage": "2020",
-                "data": load_custom_config(assignment_config)["data"],
-            }
-        ],
-        assignment_folder=tmp_path,
-        plan_dir=tmp_path / "assignment-plan",
-        max_assignment_jobs=6,
-        max_metrics_jobs=2,
-    )
+    ).resolve()
     plan = replace(
         _plan(tmp_path),
-        matching=MatchingRunConfig(
-            enabled=True,
-            config=str(assignment_config),
-        ),
-        assignment_plan_path=str(assignment_plan_path),
+        matching=MatchingRunConfig(enabled=True, config=str(assignment_config)),
     )
 
     script = submission_script(plan, tmp_path / "benchmark-plan.json")
 
-    assert len(assignment_plan["jobs"]) == 9
-    assert '--upstream-job-id "${benchmark_job_0}"' in script
-    scripts = assignment_plan_path.parent / "scripts"
-    assert len(list(scripts.glob("*.sh"))) == 10
+    # Matching runs inside the allocation: no assignment job graph behind it.
+    assert script.count("sbatch --parsable") == 1
+    assert "--upstream-job-id" not in script
+    assert "--dependency" not in script
+    assert "--mem-per-cpu=8G" in script
+    assert not (tmp_path / ".slurm" / "assignment").exists()
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
 
 
@@ -191,15 +168,14 @@ def test_submit_uses_parsable_account_partition_without_dependencies(tmp_path):
     )
 
 
-@pytest.mark.parametrize("metrics_enabled", [True, False])
-def test_complete_matching_sweep_submits_twenty_jobs_with_full_optimization_capacity(
-    tmp_path, monkeypatch, metrics_enabled
+def test_complete_matching_sweep_submits_twelve_allocations_and_nothing_else(
+    tmp_path, monkeypatch
 ):
-    plan = _large_matching_plan(tmp_path, monkeypatch, metrics_enabled=metrics_enabled)
-    assert len(plan.allocations) == 12
+    plan = _large_matching_plan(tmp_path, monkeypatch)
+    assert len(plan.allocations) == MAX_SLURM_JOBS == MAX_SUBMITTED_SLURM_JOBS == 12
     assert all(allocation.cpus == 40 for allocation in plan.allocations)
     assert sorted(i for a in plan.allocations for i in a.task_indices) == list(
-        range(120)
+        range(1000)
     )
     calls = []
 
@@ -214,20 +190,14 @@ def test_complete_matching_sweep_submits_twenty_jobs_with_full_optimization_capa
 
     submitted = submit_plan(plan, tmp_path / "benchmark-plan.json", run=fake_run)
 
-    assert len(submitted) == MAX_SUBMITTED_SLURM_JOBS
-    assert sum(command[0] == "sbatch" for command in calls) == 20
-    expected = {"benchmark": 12, "assignment": 4, "metrics": 3, "metrics-finalize": 1}
-    if not metrics_enabled:
-        expected = {"benchmark": 12, "assignment": 8}
-    assert Counter(job.phase for job in submitted) == expected
-    optimization_ids = [job.job_id for job in submitted if job.phase == "benchmark"]
-    assignment_commands = [
-        c
-        for c in calls
-        if c[0] == "sbatch" and Path(c[-1]).name.startswith("assignment-")
-    ]
-    for command in assignment_commands:
-        assert "--dependency=afterok:" + ":".join(optimization_ids) in command
+    assert len(submitted) == 12
+    assert Counter(job.phase for job in submitted) == {"benchmark": 12}
+    sbatch_calls = [command for command in calls if command[0] == "sbatch"]
+    assert len(sbatch_calls) == 12
+    for command in sbatch_calls:
+        assert "--cpus-per-task=40" in command
+        assert "--mem-per-cpu=8G" in command
+        assert not any(value.startswith("--dependency") for value in command)
     subprocess.run(
         ["bash", "-n"],
         input=submission_script(plan, tmp_path / "benchmark-plan.json"),
@@ -240,10 +210,11 @@ def test_complete_matching_sweep_submits_twenty_jobs_with_full_optimization_capa
 def test_oversized_saved_plan_is_rejected_before_any_submission(
     tmp_path, monkeypatch, entrypoint
 ):
-    plan = _large_matching_plan(tmp_path, monkeypatch, downstream_limits=(6, 6))
+    plan = _large_matching_plan(tmp_path, monkeypatch)
+    monkeypatch.setattr("benchmark.slurm.MAX_SUBMITTED_SLURM_JOBS", 10)
     calls = []
 
-    with pytest.raises(ValueError, match="25 jobs.*20-job submission limit"):
+    with pytest.raises(ValueError, match="12 jobs.*10-job submission limit"):
         if entrypoint == "api":
             submit_plan(
                 plan, tmp_path / "plan.json", run=lambda *a, **kw: calls.append(a)
@@ -254,7 +225,7 @@ def test_oversized_saved_plan_is_rejected_before_any_submission(
     assert calls == []
 
 
-@pytest.mark.parametrize("existing", [19, 20])
+@pytest.mark.parametrize("existing", [11, 12])
 def test_submit_counts_existing_user_jobs_before_submitting(tmp_path, existing):
     plan = _plan(tmp_path)
     calls = []
@@ -267,7 +238,7 @@ def test_submit_counts_existing_user_jobs_before_submitting(tmp_path, existing):
             )
         return subprocess.CompletedProcess(command, 0, stdout="123\n", stderr="")
 
-    if existing == 20:
+    if existing == 12:
         with pytest.raises(RuntimeError, match="No jobs were submitted"):
             submit_plan(plan, tmp_path / "plan.json", run=fake_run)
         assert len(calls) == 1
@@ -281,7 +252,7 @@ def test_generated_script_checks_existing_jobs_before_submitting(tmp_path):
     directory.mkdir()
     squeue = directory / "squeue"
     squeue.write_text(
-        "#!/bin/sh\nprintf '%s\\n' " + " ".join(str(i) for i in range(20)) + "\n"
+        "#!/bin/sh\nprintf '%s\\n' " + " ".join(str(i) for i in range(12)) + "\n"
     )
     squeue.chmod(0o755)
     sbatch = directory / "sbatch"
@@ -298,7 +269,7 @@ def test_generated_script_checks_existing_jobs_before_submitting(tmp_path):
     )
 
     assert result.returncode == 1
-    assert "20 existing jobs plus 1 planned jobs" in result.stderr
+    assert "12 existing jobs plus 1 planned jobs" in result.stderr
     assert not marker.exists()
 
 
@@ -326,8 +297,54 @@ def test_planning_rejects_unsupported_modes_before_generating_tasks(
         create_plan(str(tmp_path / "sweep.yaml"))
 
 
-def test_matching_plan_uses_assignments_subdirectory(tmp_path, monkeypatch):
+def test_matching_plan_builds_no_assignment_graph(tmp_path, monkeypatch):
     assignment_config = tmp_path / "assignment.yaml"
+    assignment_config.write_text("{}\n", encoding="utf-8")
+    tasks = [
+        BenchmarkTask(
+            task_id=f"task-{index}",
+            config_hash=f"hash-{index}",
+            config={"workers": 1},
+            output_dir=str((tmp_path / f"run-{index}").resolve()),
+            capacity_slots=1,
+        )
+        for index in range(3)
+    ]
+    sweep = SimulationSweep(
+        execution=ExecutionConfig(output_dir=str(tmp_path)),
+        matching=MatchingRunConfig(enabled=True, config=str(assignment_config)),
+    )
+    monkeypatch.setattr(
+        SimulationSweep,
+        "from_yaml",
+        classmethod(lambda cls, path: sweep),
+    )
+    monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: tasks)
+
+    def no_graph(*args, **kwargs):
+        pytest.fail("matching must not build an assignment job graph")
+
+    monkeypatch.setattr("assignment.slurm.build_generated_zone_slurm_plan", no_graph)
+    # Task 0 is optimized and evaluated, so it is planned for its matching;
+    # task 1 is matched too, so it is done; task 2 has not run.
+    _write_complete_run(tasks[0])
+    _write_complete_run(tasks[1])
+    _write_matching_marker(tasks[1], sweep.matching)
+
+    plan = create_plan(str(tmp_path / "sweep.yaml"))
+
+    assert [task.task_id for task in plan.tasks] == ["task-0", "task-2"]
+    assert "assignment_plan_path" not in plan.to_dict()
+    assert len(plan.allocations) == 1
+    assert plan.allocations[0].cpus == 2
+
+
+def test_task_phases_skip_only_what_is_complete(tmp_path):
+    from benchmark.slurm import task_phases
+
+    assignment_config = tmp_path / "assignment.yaml"
+    assignment_config.write_text("{}\n", encoding="utf-8")
+    matching = MatchingRunConfig(enabled=True, config=str(assignment_config))
     task = BenchmarkTask(
         task_id="task",
         config_hash="hash",
@@ -335,39 +352,60 @@ def test_matching_plan_uses_assignments_subdirectory(tmp_path, monkeypatch):
         output_dir=str((tmp_path / "run").resolve()),
         capacity_slots=1,
     )
-    sweep = SimulationSweep(
-        execution=ExecutionConfig(output_dir=str(tmp_path)),
-        matching=MatchingRunConfig(enabled=True, config=str(assignment_config)),
+    skip = ExecutionConfig(skip_existing=True, rerun_failed=True)
+
+    assert task_phases(task, skip, matching) == ("optimize", "evaluate", "match")
+    _write_complete_run(task, phase="optimization")
+    assert task_phases(task, skip, matching) == ("evaluate", "match")
+    _write_complete_run(task)
+    # Optimized and evaluated, but not matched: matching alone.
+    assert task_phases(task, skip, matching) == ("match",)
+    assert task_phases(task, skip, MatchingRunConfig()) == ()
+    _write_matching_marker(task, matching)
+    assert task_phases(task, skip, matching) == ()
+    # Another matching config means matching again.
+    assignment_config.write_text("{changed: true}\n", encoding="utf-8")
+    assert task_phases(task, skip, matching) == ("match",)
+    _write_matching_marker(task, matching)
+    assert task_phases(task, skip, matching) == ()
+    assert task_phases(task, replace(skip, skip_existing=False), matching) == (
+        "optimize",
+        "evaluate",
+        "match",
     )
-    calls = []
-    assignment_plan_path = tmp_path / ".slurm/assignment/plan.json"
-    monkeypatch.setattr(
-        SimulationSweep,
-        "from_yaml",
-        classmethod(lambda cls, path: sweep),
-    )
-    monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: [task])
-    monkeypatch.setattr(
-        "assignment.run_custom_config.load_custom_config", lambda path: {}
-    )
-    monkeypatch.setattr(
-        "benchmark.assignment.plan_assignment_targets",
-        lambda tasks, pending, matching: [{"id": "task"}],
+    # A failed run under rerun_failed starts over, matching included.
+    _write_complete_run(task, status="ERROR")
+    assert task_phases(task, skip, matching) == ("optimize", "evaluate", "match")
+    assert task_phases(task, replace(skip, rerun_failed=False), matching) == ()
+
+
+def _write_complete_run(task, *, phase="complete", status="FEASIBLE"):
+    run_dir = Path(task.output_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "schema_version": 1,
+        "config_hash": task.config_hash,
+        "phase": phase,
+        "status": status,
+    }
+    (run_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    (run_dir / RESULT_FILENAME).write_text(
+        json.dumps({"status": status}), encoding="utf-8"
     )
 
-    def build_assignment_plan(config, targets, **kwargs):
-        calls.append((config, targets, kwargs))
-        return {}, assignment_plan_path
 
-    monkeypatch.setattr(
-        "assignment.slurm.build_generated_zone_slurm_plan", build_assignment_plan
+def _write_matching_marker(task, matching, status="complete"):
+    from benchmark.assignment import (
+        MATCHING_COMPLETE_FILENAME,
+        _matching_identity,
+        matching_dir,
     )
+    from benchmark.runner import write_json
 
-    plan = create_plan(str(tmp_path / "sweep.yaml"))
-
-    assert plan.assignment_plan_path == str(assignment_plan_path)
-    assert calls[0][2]["assignment_folder"] == tmp_path / "assignments"
-    assert calls[0][2]["plan_dir"] == tmp_path / ".slurm/assignment"
+    write_json(
+        str(matching_dir(task.output_dir) / MATCHING_COMPLETE_FILENAME),
+        {**_matching_identity(task, matching), "status": status},
+    )
 
 
 def test_plan_roundtrip_snapshots_tasks_metrics_and_absolute_paths(tmp_path):
@@ -411,6 +449,31 @@ def test_submit_rejects_duplicate_tasks_before_sbatch(tmp_path, duplicate):
     assert calls == []
 
 
+class _ImmediateExecutor:
+    """Runs each submitted call at once; records how it was built."""
+
+    created: list = []
+
+    def __init__(self, max_workers, **kwargs):
+        type(self).created.append({"max_workers": max_workers, **kwargs})
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def submit(self, function, *args):
+        from concurrent.futures import Future
+
+        future = Future()
+        try:
+            future.set_result(function(*args))
+        except Exception as exc:
+            future.set_exception(exc)
+        return future
+
+
 def test_worker_enforces_allocation_and_evaluates_after_optimization(
     tmp_path, monkeypatch
 ):
@@ -443,30 +506,9 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
     assert aggregate_calls == []
 
     monkeypatch.setenv("SLURM_CPUS_PER_TASK", "8")
-    executor_workers = []
+    _ImmediateExecutor.created = []
     evaluation_kwargs = []
-
-    class ImmediateExecutor:
-        def __init__(self, max_workers):
-            executor_workers.append(max_workers)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def submit(self, function, *args):
-            from concurrent.futures import Future
-
-            future = Future()
-            try:
-                future.set_result(function(*args))
-            except Exception as exc:
-                future.set_exception(exc)
-            return future
-
-    monkeypatch.setattr("benchmark.slurm.ProcessPoolExecutor", ImmediateExecutor)
+    monkeypatch.setattr("benchmark.slurm.ProcessPoolExecutor", _ImmediateExecutor)
 
     def fake_evaluate(task, **kwargs):
         evaluation_kwargs.append(kwargs)
@@ -478,8 +520,7 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
         fake_evaluate,
     )
 
-    # A saved task ERROR must not fail the allocation, or every afterok
-    # assignment job waits on it forever.
+    # A saved task ERROR must not fail the allocation.
     assert run_benchmark_worker("plan.json", 0) == 0
     assert [phase for phase, _task_id in events] == [
         "optimize",
@@ -487,13 +528,13 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
         "evaluate",
         "evaluate",
     ]
-    # Optimization: 8 CPUs / 4 per task; evaluation: no more workers than its
-    # two tasks (and at most one per EVALUATION_CPUS_PER_TASK CPUs).
-    assert executor_workers == [2, 2]
+    # One pool: 8 CPUs / 4 per task, a fresh process for every phase.
+    assert _ImmediateExecutor.created == [{"max_workers": 2, "max_tasks_per_child": 1}]
     assert all(
         kwargs["visualization"] == plan.visualization for kwargs in evaluation_kwargs
     )
     assert len(aggregate_calls) == 1
+    assert aggregate_calls[0][1]["matching_dir"] is None
 
     def crashing_evaluate(task, **kwargs):
         raise RuntimeError("worker crash")
@@ -503,6 +544,85 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
     )
     assert run_benchmark_worker("plan.json", 0) == 1
     assert len(aggregate_calls) == 2
+
+
+def test_worker_matches_each_task_right_after_its_own_evaluation(
+    tmp_path, monkeypatch
+):
+    assignment_config = tmp_path / "assignment.yaml"
+    assignment_config.write_text("{}\n", encoding="utf-8")
+    base = _plan(tmp_path)
+    tasks = [
+        replace(
+            base.tasks[0],
+            task_id=f"task-{index}",
+            config_hash=f"hash-{index}",
+            config={"workers": 1},
+            output_dir=str((tmp_path / f"run-{index}").resolve()),
+        )
+        for index in range(3)
+    ]
+    matching = MatchingRunConfig(enabled=True, config=str(assignment_config))
+    plan = replace(base, tasks=tasks, matching=matching)
+    # Task 1 is optimized and evaluated already: it is only matched.
+    _write_complete_run(tasks[1])
+    monkeypatch.setattr("benchmark.slurm.load_plan", lambda path: plan)
+    monkeypatch.setattr("benchmark.slurm.ProcessPoolExecutor", _ImmediateExecutor)
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "3")
+    events = []
+    monkeypatch.setattr(
+        "benchmark.slurm.run_optimization_phase",
+        lambda task: (
+            events.append(("optimize", task.task_id))
+            or TaskResult(task.task_id, task.output_dir, "FEASIBLE")
+        ),
+    )
+
+    def fake_evaluate(task, **kwargs):
+        assert kwargs["matching"] == matching
+        events.append(("evaluate", task.task_id))
+        return TaskResult(task.task_id, task.output_dir, "FEASIBLE")
+
+    def fake_match(task, matching_config):
+        assert matching_config == matching
+        events.append(("match", task.task_id))
+        return "complete"
+
+    monkeypatch.setattr("benchmark.slurm.evaluate_optimization_task", fake_evaluate)
+    monkeypatch.setattr("benchmark.slurm.run_task_matching", fake_match)
+    aggregate_calls = []
+    monkeypatch.setattr(
+        "benchmark.slurm.aggregate_results",
+        lambda *args, **kwargs: aggregate_calls.append((args, kwargs)),
+    )
+
+    # Three CPUs: every task holds a slot through all its phases.
+    assert run_benchmark_worker("plan.json", 0) == 0
+    by_task = {}
+    for phase, task_id in events:
+        by_task.setdefault(task_id, []).append(phase)
+    assert by_task == {
+        "task-0": ["optimize", "evaluate", "match"],
+        "task-1": ["match"],
+        "task-2": ["optimize", "evaluate", "match"],
+    }
+    assert aggregate_calls[-1][1]["matching_dir"] == "assignments"
+
+    # One CPU: a task's next phase runs before the next task starts.
+    events.clear()
+    for task in tasks:
+        _write_complete_run(task, status="ERROR")
+    allocation = SlurmAllocation("benchmark", (0, 1, 2), 1, 1)
+    monkeypatch.setattr(
+        "benchmark.slurm._allocation_at", lambda plan, index: allocation
+    )
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "1")
+    assert run_benchmark_worker("plan.json", 0) == 0
+    assert events == [
+        (phase, f"task-{index}")
+        for index in range(3)
+        for phase in ("optimize", "evaluate", "match")
+    ]
 
 
 def test_large_benchmark_plan_uses_twelve_allocations_and_usable_cpus(tmp_path):
@@ -785,27 +905,20 @@ def test_optimization_error_marks_its_assignment_targets_skipped(
     assert (matched / "assignment_zones.csv").exists()
 
 
-def _large_matching_plan(
-    tmp_path, monkeypatch, *, metrics_enabled=True, downstream_limits=None
-):
-    source = (
+def _large_matching_plan(tmp_path, monkeypatch):
+    assignment_config = (
         Path(__file__).parents[1]
         / "assignment/configs/attendance_areas/restrictive_aa_2627.yaml"
-    )
-    config = load_custom_config(source)
-    config["export-aggregate-metrics"] = metrics_enabled
-    config["export-local-metrics"] = metrics_enabled
-    assignment_config = tmp_path / "assignment.yaml"
-    assignment_config.write_text(yaml.safe_dump(config))
+    ).resolve()
     tasks = [
         BenchmarkTask(
             task_id=f"task-{i}",
             config_hash=f"hash-{i}",
-            config={"workers": 8},
+            config={"workers": 1},
             output_dir=str(tmp_path / f"run-{i}"),
-            capacity_slots=8,
+            capacity_slots=1,
         )
-        for i in range(120)
+        for i in range(1000)
     ]
     sweep = SimulationSweep(
         execution=ExecutionConfig(output_dir=str(tmp_path)),
@@ -815,26 +928,6 @@ def _large_matching_plan(
         SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep)
     )
     monkeypatch.setattr(SimulationSweep, "generate_tasks", lambda self: tasks)
-    targets = [
-        {
-            "id": task.task_id,
-            "zone_file": str(Path(task.output_dir) / "assignment_zones.csv"),
-            "skip_marker": str(Path(task.output_dir) / ".assignment-skipped"),
-            "zone_building_blocks": "block",
-            "data": config["data"],
-        }
-        for task in tasks
-    ]
-    monkeypatch.setattr(
-        "benchmark.assignment.plan_assignment_targets", lambda *args: targets
-    )
-    if downstream_limits is not None:
-        monkeypatch.setattr(
-            "benchmark.slurm.MAX_DOWNSTREAM_ASSIGNMENT_JOBS", downstream_limits[0]
-        )
-        monkeypatch.setattr(
-            "benchmark.slurm.MAX_DOWNSTREAM_METRICS_JOBS", downstream_limits[1]
-        )
     return create_plan(str(tmp_path / "sweep.yaml"))
 
 
@@ -1035,15 +1128,3 @@ def test_run_benchmark_worker_skips_when_valid_existing_result(tmp_path, monkeyp
 
     exit_code = run_benchmark_worker(str(plan_path), allocation_index=0)
     assert exit_code == 0
-
-
-def test_evaluation_gives_each_task_two_cpus_of_memory() -> None:
-    from benchmark.slurm import SlurmAllocation, evaluation_workers
-
-    def allocation(cpus, tasks):
-        return SlurmAllocation("benchmark", tuple(range(tasks)), cpus, 1)
-
-    assert evaluation_workers(allocation(25, 25)) == 12
-    assert evaluation_workers(allocation(40, 45)) == 20
-    assert evaluation_workers(allocation(40, 3)) == 3
-    assert evaluation_workers(allocation(1, 5)) == 1
