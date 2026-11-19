@@ -231,7 +231,7 @@ optimization allocations: each task runs optimize, evaluate, and match, each
 in a fresh process on the task's CPU, into its own `matching/` folder; the
 locked end-of-allocation aggregation rebuilds the sweep's
 `<assignment_dir>/aggregate_metrics/metrics_*.csv` by streaming the runs'
-reports. A plan is at most 12 jobs (`--mem-per-cpu=5G`), with no downstream
+reports. A plan is at most 12 jobs (`--mem-per-cpu=8G`), with no downstream
 assignment graph; with `skip_existing`, a run optimized but unmatched is
 planned for its matching alone. The local `benchmark.run` path still matches
 the whole sweep at once into `<assignment_dir>/`.

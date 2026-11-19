@@ -72,7 +72,7 @@ def test_submission_script_has_required_directives(tmp_path):
     assert script.count("sbatch --parsable -A soal -p soal") == 1
     assert script.count("--ntasks=1") == 1
     assert "--cpus-per-task=4" in script
-    assert script.count("--mem-per-cpu=5G") == 1
+    assert script.count("--mem-per-cpu=8G") == 1
     assert "--export=ALL,OMP_NUM_THREADS=1" in script
     assert "benchmark_job_0=$(sbatch" in script
     assert "--dependency" not in script
@@ -99,7 +99,7 @@ def test_matching_plan_submits_only_its_allocations(tmp_path):
     assert script.count("sbatch --parsable") == 1
     assert "--upstream-job-id" not in script
     assert "--dependency" not in script
-    assert "--mem-per-cpu=5G" in script
+    assert "--mem-per-cpu=8G" in script
     assert not (tmp_path / ".slurm" / "assignment").exists()
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
 
@@ -196,7 +196,7 @@ def test_complete_matching_sweep_submits_twelve_allocations_and_nothing_else(
     assert len(sbatch_calls) == 12
     for command in sbatch_calls:
         assert "--cpus-per-task=40" in command
-        assert "--mem-per-cpu=5G" in command
+        assert "--mem-per-cpu=8G" in command
         assert not any(value.startswith("--dependency") for value in command)
     subprocess.run(
         ["bash", "-n"],

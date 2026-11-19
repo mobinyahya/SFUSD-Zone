@@ -52,7 +52,7 @@ MAX_SUBMITTED_SLURM_JOBS = MAX_SLURM_JOBS
 #: Memory per allocated CPU. Every phase of a task (optimize, evaluate,
 #: match) runs in its own fresh process on the task's CPUs, so a CPU's
 #: memory bounds one phase's peak rather than several stacked.
-SBATCH_MEM_PER_CPU = "5G"
+SBATCH_MEM_PER_CPU = "8G"
 #: The phases of one task, in order; each runs in its own process.
 TASK_PHASES = ("optimize", "evaluate", "match")
 SLURM_DIRNAME = ".slurm"
