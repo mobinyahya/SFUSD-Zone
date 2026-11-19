@@ -72,8 +72,9 @@ non-enrollees. Optimization keeps them. See `loaders/README.md`.
 capacity values in its year/profile-selected program table; optimization uses
 the current 2023-24 program table. Explicit scenarios such as `A` through `D`
 overlay matching school/program/grade capacities from the shared scenario table.
-The district's 2026-27 KG workbook scenarios (`ideal_baseline_2627`,
-`ideal_bessie_ge_2627`, `ideal_*_w2w_2627`; converted by
+The district's 2026-27 KG workbook scenarios (`ideal_baseline_aug_2026`,
+`ideal_baseline_nov_13_2026`, `ideal_bessie_ge_10_23_26`,
+`ideal_*_w2w_10_23_26`; named after their sheet and its date; converted by
 `analysis/data_prep/convert_capacity_workbook.py`) also set each listed school's
 `category`: a school with any attendance-area seats is `Attendance`, so it owns
 a graph node under `program_population: All`; the rest are `Citywide`.

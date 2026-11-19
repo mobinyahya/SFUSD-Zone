@@ -2,16 +2,17 @@
 """Convert a district capacity-scenario workbook into a capacity overlay.
 
 The district sends kindergarten capacity proposals as one Excel workbook with
-a ``Summary`` sheet and one tab per scenario. Every scenario tab holds a
-header row such as::
+a ``Summary`` sheet and one tab per scenario, and sometimes a single newer tab
+on its own, exported from Google Sheets as ``<workbook> - <tab name>.csv``.
+Every scenario tab holds a header row such as::
 
     Scenario | School code | School | Program | Grade | Ideal seats |
     Seat type | School type (this scenario) | Change vs. Baseline | Note
 
 below a few rows of free-text description. This script reads every such tab
-(other than the excluded ones) and writes one CSV in the overlay format
-``loaders.tables.apply_capacity_scenario`` reads, with three columns per
-scenario:
+of every input (other than the excluded ones) and writes one CSV in the
+overlay format ``loaders.tables.apply_capacity_scenario`` reads, with three
+columns per scenario:
 
 * ``Scenario_<name>_Capacity`` -- the program's seats (0 where the scenario
   closes or never lists it);
@@ -32,10 +33,11 @@ Usage
 
 .. code-block:: bash
 
+    RAW=/soalnas/share/data/school_choice/Data/capacity_management/raw
     uv run python analysis/data_prep/convert_capacity_workbook.py \\
-        "/soalnas/share/data/school_choice/Data/capacity_management/raw/Capacities for Stanford (2026-27).xlsx" \\
-        /soalnas/share/data/school_choice/Data/capacity_management/sfusd_capacities_2627.csv \\
-        --suffix 2627
+        "$RAW/Capacities for Stanford (2026-27).xlsx" \\
+        "$RAW/Capacities for Stanford (2026-27) - Ideal Capacity Baseline (Nov 13, 2026).csv" \\
+        /soalnas/share/data/school_choice/Data/capacity_management/sfusd_capacities_2627.csv
 
 It prints the scenario names it wrote; add any new ones to
 ``loaders/configs/base.yaml``.
@@ -44,10 +46,17 @@ How the workbook maps onto the program tables
 ---------------------------------------------
 
 * **Scenario names.** Tab titles are cut at Excel's 31 characters, so each
-  tab is matched to the full name in the ``Summary`` sheet's ``Scenario``
-  column. The name drops parentheticals (dates) and the word "Capacity",
-  becomes snake case, and gains ``_<suffix>``: "Ideal Capacity + Bessie GE
-  (10.23.26)" becomes ``ideal_bessie_ge_2627``.
+  workbook tab is matched to the full name in the ``Summary`` sheet's
+  ``Scenario`` column; a CSV's name is its file name after `` - ``. The name
+  keeps the sheet's date, drops the word "Capacity", and becomes snake case:
+  "Ideal Capacity + Bessie GE (10.23.26)" becomes ``ideal_bessie_ge_10_23_26``
+  and "Ideal Capacity Baseline (Nov 13, 2026)" ``ideal_baseline_nov_13_2026``.
+  The date is what tells two baselines apart. ``--suffix`` appends
+  ``_<suffix>``.
+* **Grades and seat types.** Only the ``--grade`` rows (default ``K``) are
+  read; newer tabs list TK-8. Seats outside the lottery's programs -- ``SDC
+  (IEP placement)``, ``Newcomer``, ``TK Feeder``, ``EES`` -- are dropped, and
+  the seats dropped are printed.
 * **Attendance-area seats.** The ``Seat type`` column, not the program or the
   school, decides which seats are attendance-area: a GE program at an
   attendance-area school may hold citywide seats too. The loaders expose the
@@ -60,8 +69,11 @@ How the workbook maps onto the program tables
 * **Program labels.** A workbook label is one district program; the program
   tables split a language program into its lottery pools (native / non-native
   speakers). ``SP DLI`` becomes ``SE+SN``, and the overlay spreads a
-  ``+``-joined row over the pools in proportion to their current seats. An
-  unknown label stops the conversion: add it to ``PROGRAM_CODES``.
+  ``+``-joined row over the pools in proportion to their current seats. Newer
+  tabs list such a program once per pool, with nothing naming the pool, so
+  rows of a multi-pool label are summed; a single-pool label listed twice per
+  seat type stops the conversion. An unknown label stops it too: add it to
+  ``PROGRAM_CODES``.
 * **School codes.** Codes are the district's. Mission Bay ES is 1731, the
   repository's canonical ID; a workbook that still carries its old typo 731 is
   corrected. A school without a code (``NEW``) needs an entry in
@@ -117,20 +129,24 @@ HEADER = {
     "Grade": "Grade",
     "Ideal seats": "capacity",
     "Seat type": "seat_type",
-    "School type (this scenario)": "school_type",
+    "School type": "school_type",
 }
+#: Headers whose parenthetical varies by tab -> the HEADER name they stand for:
+#: "School type (this scenario)" in the workbook, "(baseline)" in a baseline.
+HEADER_PREFIXES = ("School type",)
 #: The first header cell of a scenario tab.
 HEADER_MARKER = "Scenario"
 
 SEAT_TYPES = {"Attendance Area": "Attendance", "Citywide": "Citywide"}
+#: Seat types outside the lottery's programs, dropped before conversion.
+IGNORED_SEAT_TYPES = ("SDC (IEP placement)", "Newcomer", "TK Feeder", "EES")
 
 KEYS = ["SchNum", "PathwayCode", "Grade"]
 
 
 def scenario_name(full_name: str, suffix: str | None) -> str:
     """Return the registry name for one workbook scenario."""
-    text = re.sub(r"\([^)]*\)", " ", full_name)
-    text = re.sub(r"\bcapacity\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bcapacity\b", " ", full_name, flags=re.IGNORECASE)
     words = re.findall(r"[a-z0-9]+", text.lower())
     if not words:
         raise ValueError(f"Scenario {full_name!r} yields an empty name.")
@@ -159,6 +175,10 @@ def _scenario_rows(raw: pd.DataFrame) -> pd.DataFrame | None:
     if markers.empty:
         return None
     header = [str(value).strip() for value in raw.loc[markers[0]]]
+    header = [
+        next((p for p in HEADER_PREFIXES if name.startswith(f"{p} (")), name)
+        for name in header
+    ]
     missing = sorted(set(HEADER) - set(header))
     if missing:
         raise ValueError(f"Scenario header is missing columns {missing}.")
@@ -182,9 +202,30 @@ def _school_codes(rows: pd.DataFrame, title: str) -> pd.Series:
     return numeric.astype(int).replace(SCHOOL_CODE_CORRECTIONS)
 
 
-def read_scenario(rows: pd.DataFrame, title: str) -> pd.DataFrame:
+def _selected_rows(
+    rows: pd.DataFrame, title: str, grades: tuple[str, ...]
+) -> pd.DataFrame:
+    """Keep the selected grades' lottery seats, printing the seats dropped."""
+    rows = rows.loc[rows["Grade"].astype(str).str.strip().isin(grades)]
+    ignored = rows["seat_type"].isin(IGNORED_SEAT_TYPES)
+    if ignored.any():
+        seats = pd.to_numeric(rows.loc[ignored, "capacity"].replace("-", 0))
+        dropped = seats.groupby(rows.loc[ignored, "seat_type"]).sum()
+        print(
+            f"{title!r}: dropped "
+            + ", ".join(f"{int(n)} {kind} seats" for kind, n in dropped.items()),
+            file=sys.stderr,
+        )
+    return rows.loc[~ignored]
+
+
+def read_scenario(
+    rows: pd.DataFrame, title: str, grades: tuple[str, ...] = ("K",)
+) -> pd.DataFrame:
     """Normalise one scenario tab to one row per school, program, and grade."""
-    rows = rows.copy()
+    rows = _selected_rows(rows, title, grades).copy()
+    if rows.empty:
+        raise ValueError(f"{title!r} has no rows for grades {list(grades)}.")
     unknown = sorted(set(rows["PathwayName"].astype(str)) - set(PROGRAM_CODES))
     if unknown:
         raise ValueError(f"{title!r}: unmapped program labels {unknown}.")
@@ -200,9 +241,11 @@ def read_scenario(rows: pd.DataFrame, title: str) -> pd.DataFrame:
     if rows["capacity"].isna().any() or rows["capacity"].lt(0).any():
         raise ValueError(f"{title!r}: seats must be present and non-negative.")
     # A program may be listed twice, once per seat type, when some of its
-    # seats are attendance-area and the rest citywide; never twice per type.
-    if rows[[*KEYS, "seat_type"]].duplicated().any():
-        repeated = rows[[*KEYS, "seat_type"]].duplicated(keep=False)
+    # seats are attendance-area and the rest citywide. A multi-pool program
+    # may also be listed once per pool; a single-pool one never twice per type.
+    single_pool = rows["PathwayName"].map(lambda label: len(PROGRAM_CODES[label]) == 1)
+    repeated = rows[[*KEYS, "seat_type"]].duplicated(keep=False) & single_pool
+    if repeated.any():
         raise ValueError(
             f"{title!r} repeats rows: {rows.loc[repeated, KEYS].to_dict('records')}."
         )
@@ -235,25 +278,55 @@ def read_scenario(rows: pd.DataFrame, title: str) -> pd.DataFrame:
     )
 
 
-def convert(
-    path: Path, *, suffix: str | None = None, exclude: tuple[str, ...] = ("MPD",)
-) -> pd.DataFrame:
-    """Return the overlay table for every scenario tab of one workbook."""
+def _tabs(path: Path) -> list[tuple[str, pd.DataFrame, list[str] | None]]:
+    """Return ``(title, raw rows, Summary names)`` for every tab of one input.
+
+    A ``.csv`` is one tab exported from Google Sheets, named
+    ``<workbook> - <tab name>.csv``, whose title is its full name (no Summary
+    names); anything else is a workbook whose tab titles are matched to its
+    ``Summary`` sheet.
+    """
+    if path.suffix.lower() == ".csv":
+        if " - " not in path.stem:
+            raise ValueError(
+                f"{path.name}: a CSV tab must be named '<workbook> - <tab name>.csv'."
+            )
+        title = path.stem.split(" - ", 1)[1].strip()
+        raw = pd.read_csv(path, header=None, dtype=object, keep_default_na=False)
+        return [(title, raw.replace("", None), None)]
     full_names = _full_names(path)
     book = pd.read_excel(path, sheet_name=None, header=None, dtype=object)
+    return [
+        (title, raw, full_names) for title, raw in book.items() if title != "Summary"
+    ]
+
+
+def convert(
+    paths: Path | list[Path],
+    *,
+    suffix: str | None = None,
+    exclude: tuple[str, ...] = ("MPD",),
+    grades: tuple[str, ...] = ("K",),
+) -> pd.DataFrame:
+    """Return the overlay table for every scenario tab of the inputs."""
+    paths = [paths] if isinstance(paths, Path) else list(paths)
     scenarios: dict[str, pd.DataFrame] = {}
-    for title, raw in book.items():
-        if title == "Summary" or any(text in title for text in exclude):
-            continue
-        rows = _scenario_rows(raw)
-        if rows is None:
-            continue
-        name = scenario_name(_match_full_name(title, full_names), suffix)
-        if name in scenarios:
-            raise ValueError(f"Two tabs produce the scenario name {name!r}.")
-        scenarios[name] = read_scenario(rows, title)
+    for path in paths:
+        for title, raw, full_names in _tabs(path):
+            if any(text in title for text in exclude):
+                continue
+            rows = _scenario_rows(raw)
+            if rows is None:
+                continue
+            full_name = (
+                title if full_names is None else _match_full_name(title, full_names)
+            )
+            name = scenario_name(full_name, suffix)
+            if name in scenarios:
+                raise ValueError(f"Two tabs produce the scenario name {name!r}.")
+            scenarios[name] = read_scenario(rows, title, grades)
     if not scenarios:
-        raise ValueError(f"{path} has no scenario tabs.")
+        raise ValueError(f"{[str(path) for path in paths]} have no scenario tabs.")
 
     descriptive = ["SheetSchoolCode", "SchoolName", "PathwayName"]
     frame = pd.concat(scenarios.values())[[*KEYS, *descriptive]]
@@ -285,7 +358,12 @@ def convert(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("workbook", type=Path)
+    parser.add_argument(
+        "inputs",
+        type=Path,
+        nargs="+",
+        help="workbooks (.xlsx) and single-tab exports (.csv)",
+    )
     parser.add_argument("output", type=Path)
     parser.add_argument(
         "--suffix",
@@ -296,9 +374,17 @@ def main() -> None:
         action="append",
         help="skip tabs whose title contains this text (default: MPD)",
     )
+    parser.add_argument(
+        "--grade",
+        action="append",
+        help="grade rows to read, as the sheet writes them (default: K)",
+    )
     args = parser.parse_args()
     frame = convert(
-        args.workbook, suffix=args.suffix, exclude=tuple(args.exclude or ("MPD",))
+        args.inputs,
+        suffix=args.suffix,
+        exclude=tuple(args.exclude or ("MPD",)),
+        grades=tuple(args.grade or ("K",)),
     )
     frame.to_csv(args.output, index=False)
     names = [

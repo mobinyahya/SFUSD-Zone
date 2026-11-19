@@ -8,7 +8,7 @@
 #     schools after that match, in percentage points (0-100), with designated
 #     students spread over their zone's free GE seats.
 # w is swept over 0/10/30/100. The current attendance areas (2013 map) score
-# ~481 unassigned and 30.1 points of dissimilarity on ideal_baseline_2627 x
+# ~481 unassigned and 30.1 points of dissimilarity on ideal_baseline_aug_2026 x
 # applied_or_enrolled. Dissimilarity is stiff: in a 2-minute smoke run, w = 20
 # against w = 0 cost 33 more unassigned students (303 -> 336) for 0.9 points
 # (29.4 -> 28.5), so the grid reaches 100 to span the frontier.
@@ -69,128 +69,128 @@ sweep:
       scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}
-          assignment: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled}
+          optimization: {capacity_scenario: ideal_baseline_aug_2026, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_baseline_aug_2026, student_population: applied_or_enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_baseline_2627, student_population: applicant}
-          assignment: {capacity_scenario: ideal_baseline_2627, student_population: applicant}
+          optimization: {capacity_scenario: ideal_baseline_aug_2026, student_population: applicant}
+          assignment: {capacity_scenario: ideal_baseline_aug_2026, student_population: applicant}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_baseline_2627, student_population: enrolled}
-          assignment: {capacity_scenario: ideal_baseline_2627, student_population: enrolled}
+          optimization: {capacity_scenario: ideal_baseline_aug_2026, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_baseline_aug_2026, student_population: enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_baseline_2627, student_population: enrolled_all}
-          assignment: {capacity_scenario: ideal_baseline_2627, student_population: enrolled_all}
+          optimization: {capacity_scenario: ideal_baseline_aug_2026, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_baseline_aug_2026, student_population: enrolled_all}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled, include_mandarin_immersion: true}
-          assignment: {capacity_scenario: ideal_baseline_2627, student_population: applied_or_enrolled, include_mandarin_immersion: true}
+          optimization: {capacity_scenario: ideal_baseline_aug_2026, student_population: applied_or_enrolled, include_mandarin_immersion: true}
+          assignment: {capacity_scenario: ideal_baseline_aug_2026, student_population: applied_or_enrolled, include_mandarin_immersion: true}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_bessie_ge_2627, student_population: applied_or_enrolled}
-          assignment: {capacity_scenario: ideal_bessie_ge_2627, student_population: applied_or_enrolled}
+          optimization: {capacity_scenario: ideal_bessie_ge_10_23_26, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_bessie_ge_10_23_26, student_population: applied_or_enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_bessie_ge_2627, student_population: applicant}
-          assignment: {capacity_scenario: ideal_bessie_ge_2627, student_population: applicant}
+          optimization: {capacity_scenario: ideal_bessie_ge_10_23_26, student_population: applicant}
+          assignment: {capacity_scenario: ideal_bessie_ge_10_23_26, student_population: applicant}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_bessie_ge_2627, student_population: enrolled}
-          assignment: {capacity_scenario: ideal_bessie_ge_2627, student_population: enrolled}
+          optimization: {capacity_scenario: ideal_bessie_ge_10_23_26, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_bessie_ge_10_23_26, student_population: enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_bessie_ge_2627, student_population: enrolled_all}
-          assignment: {capacity_scenario: ideal_bessie_ge_2627, student_population: enrolled_all}
+          optimization: {capacity_scenario: ideal_bessie_ge_10_23_26, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_bessie_ge_10_23_26, student_population: enrolled_all}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_webster_w2w_2627, student_population: applied_or_enrolled}
-          assignment: {capacity_scenario: ideal_webster_w2w_2627, student_population: applied_or_enrolled}
+          optimization: {capacity_scenario: ideal_webster_w2w_10_23_26, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_webster_w2w_10_23_26, student_population: applied_or_enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_webster_w2w_2627, student_population: applicant}
-          assignment: {capacity_scenario: ideal_webster_w2w_2627, student_population: applicant}
+          optimization: {capacity_scenario: ideal_webster_w2w_10_23_26, student_population: applicant}
+          assignment: {capacity_scenario: ideal_webster_w2w_10_23_26, student_population: applicant}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_webster_w2w_2627, student_population: enrolled}
-          assignment: {capacity_scenario: ideal_webster_w2w_2627, student_population: enrolled}
+          optimization: {capacity_scenario: ideal_webster_w2w_10_23_26, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_webster_w2w_10_23_26, student_population: enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_webster_w2w_2627, student_population: enrolled_all}
-          assignment: {capacity_scenario: ideal_webster_w2w_2627, student_population: enrolled_all}
+          optimization: {capacity_scenario: ideal_webster_w2w_10_23_26, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_webster_w2w_10_23_26, student_population: enrolled_all}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: applied_or_enrolled}
-          assignment: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: applied_or_enrolled}
+          optimization: {capacity_scenario: ideal_alvarado_w2w_10_23_26, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_alvarado_w2w_10_23_26, student_population: applied_or_enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: applicant}
-          assignment: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: applicant}
+          optimization: {capacity_scenario: ideal_alvarado_w2w_10_23_26, student_population: applicant}
+          assignment: {capacity_scenario: ideal_alvarado_w2w_10_23_26, student_population: applicant}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: enrolled}
-          assignment: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: enrolled}
+          optimization: {capacity_scenario: ideal_alvarado_w2w_10_23_26, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_alvarado_w2w_10_23_26, student_population: enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: enrolled_all}
-          assignment: {capacity_scenario: ideal_alvarado_w2w_2627, student_population: enrolled_all}
+          optimization: {capacity_scenario: ideal_alvarado_w2w_10_23_26, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_alvarado_w2w_10_23_26, student_population: enrolled_all}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_westportal_w2w_2627, student_population: applied_or_enrolled}
-          assignment: {capacity_scenario: ideal_westportal_w2w_2627, student_population: applied_or_enrolled}
+          optimization: {capacity_scenario: ideal_westportal_w2w_10_23_26, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_westportal_w2w_10_23_26, student_population: applied_or_enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_westportal_w2w_2627, student_population: applicant}
-          assignment: {capacity_scenario: ideal_westportal_w2w_2627, student_population: applicant}
+          optimization: {capacity_scenario: ideal_westportal_w2w_10_23_26, student_population: applicant}
+          assignment: {capacity_scenario: ideal_westportal_w2w_10_23_26, student_population: applicant}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_westportal_w2w_2627, student_population: enrolled}
-          assignment: {capacity_scenario: ideal_westportal_w2w_2627, student_population: enrolled}
+          optimization: {capacity_scenario: ideal_westportal_w2w_10_23_26, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_westportal_w2w_10_23_26, student_population: enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_westportal_w2w_2627, student_population: enrolled_all}
-          assignment: {capacity_scenario: ideal_westportal_w2w_2627, student_population: enrolled_all}
+          optimization: {capacity_scenario: ideal_westportal_w2w_10_23_26, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_westportal_w2w_10_23_26, student_population: enrolled_all}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_star_king_w2w_2627, student_population: applied_or_enrolled}
-          assignment: {capacity_scenario: ideal_star_king_w2w_2627, student_population: applied_or_enrolled}
+          optimization: {capacity_scenario: ideal_star_king_w2w_10_23_26, student_population: applied_or_enrolled}
+          assignment: {capacity_scenario: ideal_star_king_w2w_10_23_26, student_population: applied_or_enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_star_king_w2w_2627, student_population: applicant}
-          assignment: {capacity_scenario: ideal_star_king_w2w_2627, student_population: applicant}
+          optimization: {capacity_scenario: ideal_star_king_w2w_10_23_26, student_population: applicant}
+          assignment: {capacity_scenario: ideal_star_king_w2w_10_23_26, student_population: applicant}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_star_king_w2w_2627, student_population: enrolled}
-          assignment: {capacity_scenario: ideal_star_king_w2w_2627, student_population: enrolled}
+          optimization: {capacity_scenario: ideal_star_king_w2w_10_23_26, student_population: enrolled}
+          assignment: {capacity_scenario: ideal_star_king_w2w_10_23_26, student_population: enrolled}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_star_king_w2w_2627, student_population: enrolled_all}
-          assignment: {capacity_scenario: ideal_star_king_w2w_2627, student_population: enrolled_all}
+          optimization: {capacity_scenario: ideal_star_king_w2w_10_23_26, student_population: enrolled_all}
+          assignment: {capacity_scenario: ideal_star_king_w2w_10_23_26, student_population: enrolled_all}
 
 tasks:
   - seed: [1, 2, 3, 4, 5]

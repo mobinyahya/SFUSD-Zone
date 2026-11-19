@@ -35,6 +35,16 @@ and makes CBEDS the enrolment record in place of the demographics extract.
 Its "full student file" is not read. Where a student's CBEDS record has a blank
 grade or school 899, that file overwrote their Main Round grade (2,468 SY26-27
 rows); the Main Round side of it is the post-run, which is read directly.
+The district's corrected file (`Nov 18 2026 data transfer/SY26-27/out_updated_SY26-27
+full student file.csv`) fixes this and is kept only as a cross-check. It holds
+the same 58,541 students. Its 2,581 changed rows are the roster's placeholder
+records (2,473 at school 899 with no grade, 108 PK at early-education
+schools): the corrected file marks them `CBEDS = N` and restores their Main
+Round grade and school. The converter already counts such records as not
+enrolled, so no cleaned table changes. Its other differences are export noise:
+lower-case headers, two-digit years, coordinates rounded by at most 8e-6
+degrees, three mis-encoded street names, and three `RaceX` codes in scientific
+notation.
 CBEDS `SES` is also not used for FRL: only 17% of kindergartners are flagged,
 against about 50% in grades 1-12, because new kindergartners are not yet
 certified. FRL stays the block-level index or the `frl_estimate`.

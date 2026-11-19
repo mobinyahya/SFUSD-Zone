@@ -638,7 +638,7 @@ def test_registered_capacity_overlay_becomes_the_group_capacity_source(group):
         {
             "scenario": "sfusd-2627",
             "overrides": {
-                "filters": {group: {"capacity_scenario": "ideal_webster_w2w_2627"}}
+                "filters": {group: {"capacity_scenario": "ideal_webster_w2w_10_23_26"}}
             },
         },
         environ={},

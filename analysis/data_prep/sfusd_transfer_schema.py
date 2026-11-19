@@ -153,6 +153,7 @@ TRANSFER_FILE_FRAGMENTS: dict[str, str] = {
 #: file" is deliberately not read: where a student's CBEDS record has a blank
 #: grade or school 899 it overwrote the Main Round grade (2,468 SY26-27 rows),
 #: and the Main Round side of it is the post-run this converter already reads.
+#: The corrected file of Nov 18 2026 changes no cleaned table (see README.md).
 ENROLLMENT_FILE_FRAGMENTS: dict[str, str] = {
     "cbeds": "cbeds",
     "coordinates": "latitudelongtitude",

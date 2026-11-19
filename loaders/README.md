@@ -809,7 +809,7 @@ A registered entry may instead name an overlay file, for either group:
 
 ```yaml
 capacity_scenarios:
-  ideal_webster_w2w_2627:
+  ideal_webster_w2w_10_23_26:
     source: capacity.sfusd.2627
 ```
 
@@ -818,17 +818,20 @@ replacing the scenario's own binding (a run's `overrides.sources` still wins),
 and reads its `Scenario_<name>_Capacity` column as below.
 
 The checked-in overlays are the district's 2026-27 kindergarten "ideal
-capacity" scenarios (`Capacities for Stanford (2026-27).xlsx`), converted by
-`analysis/data_prep/convert_capacity_workbook.py`:
+capacity" scenarios (`Capacities for Stanford (2026-27).xlsx`, plus the
+November 13 baseline sent as its own tab), converted by
+`analysis/data_prep/convert_capacity_workbook.py`. Each is named after its
+sheet, date included:
 
 | Name | Scenario |
 |---|---|
-| `ideal_baseline_2627` | Every classroom used, current program mix |
-| `ideal_bessie_ge_2627` | Baseline, with Carmichael (449) GE as an attendance-area program |
-| `ideal_webster_w2w_2627` | Baseline, with Webster (497) wall-to-wall Spanish DLI |
-| `ideal_alvarado_w2w_2627` | Baseline, with Alvarado (420) wall-to-wall Spanish DLI |
-| `ideal_westportal_w2w_2627` | Baseline, with West Portal (876) wall-to-wall Cantonese DLI |
-| `ideal_star_king_w2w_2627` | Baseline, with Starr King (838) wall-to-wall Mandarin DLI |
+| `ideal_baseline_aug_2026` | Every classroom used, current program mix |
+| `ideal_baseline_nov_13_2026` | The revised baseline ("FLO Functional 2028-29"): Garfield CAN DLI, Glen Park SP BIL and Moscone CAN BIL become GE; Lau, Milk, Hillcrest and Sherman gain a GE room; Lakeshore, Rosa Parks and SF Public Montessori lose one. No Mandarin Immersion TK-8 seats |
+| `ideal_bessie_ge_10_23_26` | Baseline, with Carmichael (449) GE as an attendance-area program |
+| `ideal_webster_w2w_10_23_26` | Baseline, with Webster (497) wall-to-wall Spanish DLI |
+| `ideal_alvarado_w2w_10_23_26` | Baseline, with Alvarado (420) wall-to-wall Spanish DLI |
+| `ideal_westportal_w2w_10_23_26` | Baseline, with West Portal (876) wall-to-wall Cantonese DLI |
+| `ideal_star_king_w2w_10_23_26` | Baseline, with Starr King (838) wall-to-wall Mandarin DLI |
 
 The workbook is the source of truth for these scenarios twice over: for the
 seats, and for which schools are attendance-area schools. A school with any
