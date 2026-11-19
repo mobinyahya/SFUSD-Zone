@@ -56,7 +56,7 @@ tasks:
     workers: 1
     hints: voronoi
     recom_iterations: -1
-    recom_objective: cut_edges   # metres, since weight_edges is on
+    objective: cut_edges   # metres, since weight_edges is on
     recom_burst_length: 25
     hint_zoning: '/soalnas/share/data/school_choice/local_runs/all_schools_2627_cap50_r4/59-zone/seed1/frl0.3_racial1/overage0.5_shortage0.5/single_cp_bool_Block_0_tl_3600_ac312ada/zone_dict_area_Block_0.json'
     seed: 1

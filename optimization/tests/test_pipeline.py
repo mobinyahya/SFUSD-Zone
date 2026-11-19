@@ -44,8 +44,8 @@ class MemoryDataset:
             shortage=config.shortage,
             max_distance=config.max_distance,
             boundary_prop=config.boundary_prop,
-            weight_edges=config.weight_edges,
-            compactness_objective=config.compactness_objective,
+            weight_edges=config.uses_weighted_edges,
+            objective=config.objective,
             school_distance_area_weight=config.school_distance_area_weight,
             school_distance_student_weight=config.school_distance_student_weight,
             optimization_config=config,
@@ -808,14 +808,8 @@ def test_single_math_programming_step_uses_the_generated_hint(monkeypatch):
     assert recorder.problems[0].hint == hint
 
 
-def test_shorthand_steps_take_the_runs_objective_fields():
-    assert _config(compactness_objective="school_distance").steps[0].objective == (
+def test_shorthand_steps_take_the_runs_objective():
+    assert _config(objective="school_distance").steps[0].objective == (
         "school_distance"
     )
-    from optimization.pipeline import default_objective
-
-    legacy = SimpleNamespace(
-        objective=None, recom_objective="welfare", compactness_objective="cut_edges"
-    )
-    assert default_objective(legacy, "recom") == "matching_welfare"
-    assert default_objective(legacy, "cp_bool") == "cut_edges"
+    assert _config().steps[0].objective == "cut_edges"

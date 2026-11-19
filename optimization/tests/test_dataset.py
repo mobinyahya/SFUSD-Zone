@@ -373,7 +373,7 @@ def test_perimeter_and_unit_cut_steps_reuse_weighted_graph_data(tmp_path, monkey
 
 @pytest.mark.parametrize(
     "objective,needs_areas",
-    [("average_distance", False), ("average_squared_distance", True)],
+    [("average_distance", False), ("school_distance", True)],
 )
 def test_named_heuristic_distance_objectives_load_only_needed_geometry(
     tmp_path, monkeypatch, objective, needs_areas
@@ -446,13 +446,25 @@ def test_pipeline_school_distance_attaches_areas_only_when_needed(
     dataset.problem_for("Block_0", centroid_school_ids=[100])
     assert attachments == []
     step_config = copy(dataset.config)
-    step_config.compactness_objective = "school_distance"
+    step_config.objective = "school_distance"
     for _ in range(2):
         problem = dataset.problem_for(
             "Block_0", centroid_school_ids=[100], config=step_config
         )
-        assert problem.compactness_objective == "school_distance"
+        assert problem.objective == "school_distance"
     assert attachments == [(graph, "Block", dataset.data)]
+
+
+def test_weighted_sum_with_a_school_distance_term_needs_land_areas(
+    tmp_path, monkeypatch
+):
+    dataset, _, _ = _pipeline_dataset(tmp_path, monkeypatch)
+    config = copy(dataset.config)
+    config.objective = "weighted_sum"
+    config.objective_weights = {"capacity_match": 1.0}
+    assert not dataset._uses_school_distance(config)
+    config.objective_weights = {"capacity_match": 1.0, "school_distance": 2.0}
+    assert dataset._uses_school_distance(config)
 
 
 @pytest.mark.parametrize(

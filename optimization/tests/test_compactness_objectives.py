@@ -49,7 +49,7 @@ def _cost(problem, assignment, objective):
     "objective,unit",
     [
         ("average_distance", "mile"),
-        ("average_squared_distance", "mile^2"),
+        ("school_distance", "mile^2"),
         ("boundary_perimeter", "meter"),
     ],
 )
@@ -92,7 +92,7 @@ def test_methods_minimize_and_report_the_same_physical_cost(method, objective, u
 
 
 def test_average_distance_is_linear_and_uses_only_student_shares():
-    problem = replace(_problem(), compactness_objective="average_distance")
+    problem = replace(_problem(), objective="average_distance")
     for node in problem.nodes:
         problem.G.nodes[node].pop("land_area_m2")
     costs = problem.distance_objective_costs()
@@ -107,7 +107,7 @@ def test_average_distance_is_linear_and_uses_only_student_shares():
         problem.distance_objective_metadata()["distance_weighting"] == "student_share"
     )
     scorer = heuristic_scorer(
-        replace(problem, compactness_objective="cut_edges"), "average_distance", {}
+        replace(problem, objective="cut_edges"), "average_distance", {}
     )
     assert scorer((problem.hint,)) == pytest.approx(
         (_cost(problem, problem.hint, "average_distance"),)
@@ -123,15 +123,12 @@ def test_average_distance_rejects_an_empty_student_population():
 
 
 @pytest.mark.parametrize("method", METHODS)
-def test_squared_distance_name_reuses_existing_area_and_student_weights(method):
-    config = OptimizationConfig(method=method, objective="average_squared_distance")
+def test_step_config_carries_the_objective_and_its_weights(method):
+    config = OptimizationConfig(method=method, objective="school_distance")
     effective = step_config(config, config.steps[0])
-    underlying = (
-        effective.compactness_objective
-        if method in {"cp_bool", "cp_int", "mip"}
-        else effective.recom_objective
-    )
-    assert underlying == "school_distance"
+    assert (effective.strategy, effective.steps) == ("pipeline", [])
+    assert effective.solver == method
+    assert effective.objective == "school_distance"
     assert effective.school_distance_area_weight == 0.75
     assert effective.school_distance_student_weight == 0.25
 
@@ -147,10 +144,10 @@ def test_perimeter_loads_weights_without_changing_other_step_objectives():
     effective = [step_config(config, s, i) for i, s in enumerate(config.steps)]
     assert config.weight_edges is False
     assert config.graph_weight_edges is True
-    assert [c.weight_edges for c in effective] == [False, True, False]
-    assert [c.compactness_objective for c in effective] == [
+    assert [c.uses_weighted_edges for c in effective] == [False, True, False]
+    assert [c.objective for c in effective] == [
         "cut_edges",
-        "cut_edges",
+        "boundary_perimeter",
         "average_distance",
     ]
 
@@ -162,7 +159,7 @@ def test_mixed_objectives_preserve_units_costs_and_saved_problem_settings(tmp_pa
         "cut_edges",
         "boundary_perimeter",
         "average_distance",
-        "average_squared_distance",
+        "school_distance",
     ]
     config = OptimizationConfig(
         hints="none",
@@ -197,12 +194,12 @@ def test_mixed_objectives_preserve_units_costs_and_saved_problem_settings(tmp_pa
             )
         restored = strategy.problem_for_stage(dataset, solution.metadata)
         assert restored.weight_edges is (name == "boundary_perimeter")
-        assert restored.compactness_objective == solution.problem.compactness_objective
+        assert restored.objective == solution.problem.objective == name
 
 
 @pytest.mark.parametrize(
     "objective,weights_matter",
-    [("average_squared_distance", True), ("average_distance", False)],
+    [("school_distance", True), ("average_distance", False)],
 )
 def test_benchmark_hash_tracks_only_weights_used_by_the_objective(
     objective, weights_matter

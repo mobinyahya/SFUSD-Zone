@@ -1,4 +1,4 @@
-"""The school-distance compactness objective (CP/MIP and adaptive short bursts)."""
+"""The school-distance objective, the same centroid cost for CP/MIP and ReCom."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import pytest
 from benchmark.config import optimization_config_hash
 from optimization.config import OptimizationConfig
 from optimization.data.feasibility import check_zoning
+from optimization.objectives import heuristic_scorer
 from optimization.solvers import get_solver
-from optimization.solvers.burst_objectives import SchoolDistanceScorer
 from optimization.tests.synthetic import make_grid_problem
 
 
@@ -19,7 +19,7 @@ def _grid(area_weight: float = 0.75, **overrides):
     problem = make_grid_problem(
         3,
         3,
-        compactness_objective="school_distance",
+        objective="school_distance",
         school_distance_area_weight=area_weight,
         school_distance_student_weight=1.0 - area_weight,
         **overrides,
@@ -85,31 +85,31 @@ def test_mip_minimizes_school_distance_exactly():
     assert solution.objective == pytest.approx(_brute_force_cost(problem), abs=1e-7)
 
 
-def test_burst_scorer_charges_each_node_to_its_zones_school():
+def test_recom_scores_school_distance_to_each_zones_centroid():
     problem = _grid()
-    scorer = SchoolDistanceScorer(problem)
-    weights = problem.school_distance_weights()
-    # Zones labelled against the centroids, so a ReCom partition that keeps
-    # each school in its own zone scores exactly like the CP objective.
-    assignment = {n: (0 if n in {0, 1, 3} else 1) for n in problem.nodes}
+    scorer = heuristic_scorer(problem, "school_distance", {})
     costs = problem.school_distance_costs()
+    assignment = {n: (0 if n in {0, 1, 3} else 1) for n in problem.nodes}
 
     assert scorer((assignment,)) == pytest.approx(
         (sum(costs[(z, n)] for n, z in assignment.items()),)
     )
 
-    # Swapping the zone labels changes nothing: the school, not the label,
-    # decides which distance a node pays.
-    swapped = {n: 1 - z for n, z in assignment.items()}
-    assert scorer((swapped,))[0] == pytest.approx(scorer((assignment,))[0])
 
-    # Two schools in one zone: every node pays its nearer school.
-    merged = {n: 0 for n in problem.nodes}
-    nearest = sum(
-        weights[n] * min(problem.distance(c, n) for c in problem.centroids) ** 2
-        for n in problem.nodes
+def test_recom_school_distance_anchors_centroids_and_reports_the_cp_cost():
+    problem = _grid()
+    solver = get_solver("recom", solve_time_limit=5, recom_iterations=30, seed=1)
+
+    solution = solver.solve(problem)
+
+    assert solution.feasible
+    for zone, centroid in enumerate(problem.centroids):
+        assert solution.assignment[centroid] == zone
+    costs = problem.school_distance_costs()
+    assert solution.objective == pytest.approx(
+        sum(costs[(z, n)] for n, z in solution.assignment.items())
     )
-    assert scorer((merged,))[0] == pytest.approx(nearest)
+    assert solution.metadata["objective_kind"] == "school_distance"
 
 
 @pytest.mark.parametrize(
@@ -123,14 +123,7 @@ def test_burst_scorer_charges_each_node_to_its_zones_school():
             },
             r"\[0, 1\]",
         ),
-        ({"compactness_objective": "perimeter"}, "compactness_objective"),
-        (
-            {
-                "compactness_objective": "school_distance",
-                "solver": "recom",
-            },
-            "recom_objective",
-        ),
+        ({"objective": "perimeter"}, "Unknown objective"),
     ],
 )
 def test_config_rejects_bad_school_distance_settings(overrides, message):
@@ -142,7 +135,7 @@ def test_config_accepts_school_distance_for_cp_and_short_bursts():
     cp = OptimizationConfig(
         levels=["BlockGroup_0"],
         solver="cp_bool",
-        compactness_objective="school_distance",
+        objective="school_distance",
         school_distance_area_weight=1.0,
         school_distance_student_weight=0.0,
     )
@@ -150,7 +143,7 @@ def test_config_accepts_school_distance_for_cp_and_short_bursts():
     asb = OptimizationConfig(
         levels=["BlockGroup_0"],
         solver="recom",
-        recom_objective="school_distance",
+        objective="school_distance",
     )
     assert (asb.school_distance_area_weight, asb.school_distance_student_weight) == (
         0.75,
@@ -167,7 +160,7 @@ def test_default_objective_settings_keep_benchmark_hashes():
         school_distance_student_weight=0.5,
     )
     distance = OptimizationConfig(
-        levels=["BlockGroup_0"], compactness_objective="school_distance"
+        levels=["BlockGroup_0"], objective="school_distance"
     )
 
     base = optimization_config_hash(default, source_manifest=manifest)

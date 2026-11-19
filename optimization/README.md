@@ -77,8 +77,7 @@ the centroid. Both settings are step options too, and drop
 out of task ids at their defaults, so tasks saved before these defaults keep
 their ids although they were refined with the old release (`all`, radius 0).
 
-A step's objective defaults to the run's `objective`, else
-`compactness_objective` (CP/MIP) or `recom_objective` (ReCom). Stages report
+A step's objective defaults to the run's `objective`. Stages report
 the solver's own `wall_time`, and `carry_over_compute` hands that unused
 solver time to the next step. A step that is not the last whose coarse graph
 merges two centroids into one node is saved as `SKIPPED`, and `previous`
@@ -98,13 +97,21 @@ uv run python -m benchmark.run benchmark/sweep.pipeline.example.yaml
 | `cut_edges` | yes | yes | yes | yes |
 | `boundary_perimeter` | yes | yes | yes | yes |
 | `average_distance` | yes | yes | yes | yes |
-| `average_squared_distance` | yes | yes | yes | yes |
 | `school_distance` | yes | yes | yes | yes |
 | `matching_welfare` | yes | yes | — | yes |
 | `saa_welfare` | yes | yes | yes | yes |
 | `choice_welfare` | yes | yes | yes | yes |
 | `capacity_match` | — | — | — | yes |
 | `aa_capacity_match` | — | — | — | yes |
+| `fill_polarization` | — | — | — | yes |
+| `weighted_sum` | — | — | — | yes |
+
+`objective` is one setting for every route: a pipeline step's `objective`, or
+the run's top-level `objective`, which the steps default to and which
+`strategy: single` and `strategy: recursive` solve directly (`recursive` takes
+the boundary and distance objectives only; the other strategies bring their
+own objective). Every name resolves through `optimization/objectives.py`, so a
+given objective is the same cost whichever method and route solve it.
 
 Unsupported combinations fail during configuration, before loading graphs.
 Methods are `cp_bool`, `cp_int`, `mip`, and `recom`. There is no implicit
@@ -132,9 +139,9 @@ assigned centroid school: `sum_n students_n * d(n, centroid_zone(n)) / total_stu
 reported in miles. It does not load land areas and is distinct from the reporting
 metric that averages distances to all GE schools in a zone.
 
-`average_squared_distance` minimizes `sum_n w_n * d(n, centroid_zone(n))^2`,
-reported in miles squared. It reuses the existing `school_distance` objective,
-which remains accepted for compatibility. The weights default to 75% land-area
+`school_distance` minimizes `sum_n w_n * d(n, centroid_zone(n))^2`,
+reported in miles squared. ReCom measures it to each zone's centroid, as the
+CP/MIP models do. The weights default to 75% land-area
 share and 25% student share, controlled by `school_distance_area_weight` and
 `school_distance_student_weight`. Set them to `0` and `1` for a purely
 student-weighted squared mean. All methods use the same cost coefficients.
@@ -156,7 +163,7 @@ steps:
   - {name: counts, level: Block_2, method: cp_int, objective: cut_edges}
   - {name: perimeter, level: Block_0, method: cp_bool, objective: boundary_perimeter}
   - {name: distance, level: Block_0, method: recom, objective: average_distance}
-  - {name: squared, level: Block_0, method: cp_int, objective: average_squared_distance,
+  - {name: squared, level: Block_0, method: cp_int, objective: school_distance,
      options: {school_distance_area_weight: 0, school_distance_student_weight: 1}}
 ```
 

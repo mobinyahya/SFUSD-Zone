@@ -41,7 +41,7 @@ optimization_defaults:
   shortage: -1
   boundary_prop: -1         # no cut-edge cap
 
-  recom_objective: cut_edges
+  objective: cut_edges
   recom_burst_length: 25
 
   hints: voronoi            # fallback only; hint_zoning below takes precedence

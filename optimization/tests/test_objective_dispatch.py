@@ -57,7 +57,7 @@ def test_school_distance_uses_the_same_cost_and_domains_across_methods(method):
     )
     assert solution.metadata["method"] == method
     assert solution.metadata["objective"] == "school_distance"
-    assert problem.compactness_objective == "cut_edges"
+    assert problem.objective == "cut_edges"
     assert problem.candidates == {7: {1}}
 
 
@@ -188,9 +188,10 @@ def test_unsupported_objective_fails_before_problem_or_solver_loading():
         validate_method_objective("cp_bool", "unrecognized")
 
 
-def test_welfare_alias_is_explicitly_matching_welfare():
-    assert get_objective("welfare") is get_objective("matching_welfare")
-    validate_method_objective("cp_bool", "welfare")
+def test_each_objective_has_one_name():
+    for alias in ("welfare", "average_squared_distance"):
+        with pytest.raises(ValueError, match="Unknown objective"):
+            get_objective(alias)
     assert "matching_welfare" in supported_objectives("cp_bool")
     assert "matching_welfare" not in supported_objectives("mip")
 

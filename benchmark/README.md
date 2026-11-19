@@ -334,7 +334,7 @@ The first pass writes and verifies each archive against the old files and slims 
 | `cp_bool`, `cp_int` | CP-SAT log | `#N` and `#Bound` events with timestamps, plus the response summary (`gap_integral` included). |
 | `recom` | JSONL | One record per strictly improving state: boundary cost and every individual constraint penalty. |
 
-Heuristic records are improvement-only, ordered by `(not feasible, objective if feasible else unweighted Lagrangian)`. Any feasible state supersedes any infeasible one, so penalties are nonzero only while no feasible partition has been found yet. Penalties are residuals in percent of the zone's students (school counts in percent of the average count), as the `penalty_scale` header field states; logs written before the ReCom overhaul by `recom`, `relaxed_recom`, and `short_bursts` report absolute student counts instead. When `boundary_prop` is set, the log also carries a `boundary` penalty, cut edges above the cap in percent of the cap. Feasible states are ranked by the search's own objective, named in the header's `objective` and `objective_sense` and recorded per state as `objective` (so a `welfare` log rises); `incumbent` in the parsed table is that value. Logs written before this ranked feasible states by boundary cost. The header also records every `recom_*` setting.
+Heuristic records are improvement-only, ordered by `(not feasible, objective if feasible else unweighted Lagrangian)`. Any feasible state supersedes any infeasible one, so penalties are nonzero only while no feasible partition has been found yet. Penalties are residuals in percent of the zone's students (school counts in percent of the average count), as the `penalty_scale` header field states; logs written before the ReCom overhaul by `recom`, `relaxed_recom`, and `short_bursts` report absolute student counts instead. When `boundary_prop` is set, the log also carries a `boundary` penalty, cut edges above the cap in percent of the cap. Feasible states are ranked by the search's own objective, named in the header's `objective` and `objective_sense` and recorded per state as `objective` (so a `matching_welfare` log rises); `incumbent` in the parsed table is that value. Logs written before this ranked feasible states by boundary cost. The header also records every `recom_*` setting.
 
 `save_solver_progress: true` is a separate, heavier mechanism: `mip` and `cp_bool` only, and it writes every incumbent's node and area assignment to the run's one `solver_progress.json.xz` (`run_archive.read_solver_progress`). Prefer the logs when only objective values are needed.
 
@@ -494,7 +494,7 @@ solve calls is not represented by the stage durations.
 
 Pipeline `objective: boundary_perimeter` automatically loads integer-metre
 shared-boundary costs, and can share a run with `cut_edges`, `average_distance`,
-or `average_squared_distance` steps. Distance objectives report miles or miles
+or `school_distance` steps. Distance objectives report miles or miles
 squared; each stage retains its own objective name and units. The legacy
 `optimization_defaults.weight_edges: true` setting also enables boundary costs
 for all these methods.
