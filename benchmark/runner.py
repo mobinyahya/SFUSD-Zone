@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import contextlib
+import gc
 import json
 import os
+import resource
+import socket
+import sys
 import tempfile
+import time
 import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from optimization.config import OptimizationConfig
 from optimization.run_archive import (
@@ -38,6 +44,9 @@ from metrics.base import is_iterative_strategy, stage_names
 SCHEMA_VERSION = 1
 MANIFEST_FILENAME = "benchmark_manifest.json"
 RESULT_FILENAME = "result.json"
+#: Per-phase wall/CPU seconds and peak RSS of the run's latest attempt.
+PHASE_TIMINGS_FILENAME = "phase_timings.json"
+PHASE_TIMINGS_SCHEMA_VERSION = 1
 
 
 def _saved_manifest(task: BenchmarkTask) -> dict[str, Any] | None:
@@ -95,7 +104,7 @@ def run_optimization_task(
 ) -> TaskResult:
     """Run optimization and evaluate its in-memory stages."""
 
-    phase_result, solutions, manifest = _execute_optimization_phase(task)
+    phase_result, solutions, manifest, dataset = _execute_optimization_phase(task)
     if solutions is None:
         return phase_result
     return evaluate_optimization_task(
@@ -106,19 +115,190 @@ def run_optimization_task(
         visualization=visualization,
         manifest=manifest,
         solutions=solutions,
+        dataset=dataset,
     )
 
 
 def run_optimization_phase(task: BenchmarkTask) -> TaskResult:
     """Run and persist optimization stages without calculating benchmark metrics."""
 
-    result, _, _ = _execute_optimization_phase(task)
+    result, _, _, _ = _execute_optimization_phase(task)
     return result
+
+
+def run_optimize_and_evaluate(
+    task: BenchmarkTask,
+    *,
+    strict_metrics: bool = True,
+    compute_stage_metrics: bool = False,
+    matching: MatchingRunConfig | None = None,
+    visualization: VisualizationRunConfig | None = None,
+) -> TaskResult:
+    """Optimize, then evaluate in the same process, each phase timed.
+
+    The evaluation is handed the optimization's in-memory dataset, stages,
+    and manifest instead of reloading them, as a standalone evaluate
+    (:func:`evaluate_optimization_task` given none of them) must. The solver
+    and strategy are released first, so the process peaks near the
+    optimization's own peak. Each phase persists exactly what it persists
+    when run apart, so a crash between them leaves a run that a standalone
+    evaluate resumes.
+    """
+
+    with timed_phase(task, "optimize") as timing:
+        result, solutions, manifest, dataset = _execute_optimization_phase(task)
+        timing["status"] = result.status
+    if solutions is None:
+        return result
+    release_memory()
+    with timed_phase(task, "evaluate", fused_with="optimize") as timing:
+        result = evaluate_optimization_task(
+            task,
+            strict_metrics=strict_metrics,
+            compute_stage_metrics=compute_stage_metrics,
+            matching=matching,
+            visualization=visualization,
+            manifest=manifest,
+            solutions=solutions,
+            dataset=dataset,
+        )
+        timing["status"] = result.status
+    return result
+
+
+def release_memory() -> None:
+    """Collect garbage and hand freed heap back to the OS where glibc allows."""
+    gc.collect()
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
+def _peak_rss_mb(who: int) -> float:
+    # Linux reports ru_maxrss in KiB, macOS in bytes.
+    scale = 1024 * 1024 if sys.platform == "darwin" else 1024
+    return resource.getrusage(who).ru_maxrss / scale
+
+
+def _current_rss_mb() -> float | None:
+    try:
+        with open("/proc/self/status", encoding="ascii") as stream:
+            for line in stream:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def _cpu_seconds() -> float:
+    total = 0.0
+    for who in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN):
+        usage = resource.getrusage(who)
+        total += usage.ru_utime + usage.ru_stime
+    return total
+
+
+@contextlib.contextmanager
+def timed_phase(task: BenchmarkTask, phase: str, *, fused_with: str | None = None):
+    """Time one task phase; record it and print one line to the log.
+
+    Yields a dict the caller sets ``status`` in. The record (start, end, wall
+    and CPU seconds, peak RSS) is merged into the run's
+    ``phase_timings.json`` (:func:`record_phase_timing`). ``peak_rss_mb`` is
+    the process high-water mark, so a phase fused into the optimization's
+    process (``fused_with``) reports the larger of the two; its
+    ``rss_start_mb`` shows what the earlier phase still held.
+    """
+    timing: dict[str, Any] = {"status": None}
+    started_at = _now()
+    wall_start = time.perf_counter()
+    cpu_start = _cpu_seconds()
+    rss_start = _current_rss_mb()
+    try:
+        yield timing
+    except BaseException:
+        timing["status"] = "CRASHED"
+        raise
+    finally:
+        record = {
+            "phase": phase,
+            "status": timing.get("status"),
+            "started_at": started_at,
+            "completed_at": _now(),
+            "wall_seconds": round(time.perf_counter() - wall_start, 3),
+            "cpu_seconds": round(_cpu_seconds() - cpu_start, 3),
+            "peak_rss_mb": round(
+                max(
+                    _peak_rss_mb(resource.RUSAGE_SELF),
+                    _peak_rss_mb(resource.RUSAGE_CHILDREN),
+                ),
+                1,
+            ),
+            "rss_start_mb": None if rss_start is None else round(rss_start, 1),
+            "fused_with": fused_with,
+            "host": socket.gethostname(),
+            "pid": os.getpid(),
+            "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        }
+        try:
+            record_phase_timing(task.output_dir, record)
+        except Exception as exc:  # A timing never fails its phase.
+            print(f"Could not record {phase} timing: {exc}", file=sys.stderr)
+        print(format_phase_timing(task.task_id, record), flush=True)
+
+
+def format_phase_timing(task_id: str, record: Mapping[str, Any]) -> str:
+    """The compact one-line allocation-log form of a phase record."""
+    fused = f" fused_with={record['fused_with']}" if record.get("fused_with") else ""
+    return (
+        f"phase task={task_id} phase={record['phase']} "
+        f"status={record.get('status')} wall={record['wall_seconds']:.1f}s "
+        f"cpu={record['cpu_seconds']:.1f}s peak_rss={record['peak_rss_mb']:.0f}MB"
+        f"{fused} host={record.get('host')} pid={record.get('pid')}"
+    )
+
+
+def record_phase_timing(output_dir: str, record: Mapping[str, Any]) -> None:
+    """Merge one phase record into ``<run>/phase_timings.json``.
+
+    Only the latest attempt is kept: an optimize record starts a new one,
+    dropping the evaluate and match records of the zoning it replaced. One
+    process works on a run at a time, so the read-modify-write is safe.
+    """
+    path = Path(os.path.expanduser(output_dir)) / PHASE_TIMINGS_FILENAME
+    phases: dict[str, Any] = {}
+    if record["phase"] != "optimize":
+        phases = dict(load_phase_timings(output_dir).get("phases") or {})
+    phases[record["phase"]] = dict(record)
+    write_json(
+        str(path),
+        {"schema_version": PHASE_TIMINGS_SCHEMA_VERSION, "phases": phases},
+    )
+
+
+def load_phase_timings(output_dir: str) -> dict[str, Any]:
+    """The run's ``phase_timings.json``, or an empty record."""
+    path = Path(os.path.expanduser(output_dir)) / PHASE_TIMINGS_FILENAME
+    try:
+        with path.open(encoding="utf-8") as stream:
+            value = json.load(stream)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _execute_optimization_phase(
     task: BenchmarkTask,
-) -> tuple[TaskResult, list[ZoneSolution] | None, dict[str, Any] | None]:
+) -> tuple[TaskResult, list[ZoneSolution] | None, dict[str, Any] | None, Any]:
+    """Optimize and persist ``task``; return its stages, manifest, and dataset.
+
+    The solver and strategy stay local, so they are released on return; the
+    dataset and stages are what an in-process evaluation needs.
+    """
     from benchmark.assignment import clear_assignment_targets
 
     output_dir = os.path.expanduser(task.output_dir)
@@ -134,6 +314,7 @@ def _execute_optimization_phase(
         solver = config.make_solver(output_dir=output_dir)
         strategy = config.make_strategy()
         solutions = strategy.run(dataset, solver)
+        del solver, strategy
         if not solutions:
             raise ValueError("Optimization strategy returned no solutions.")
         stage_records = save_stage_artifacts(
@@ -166,7 +347,7 @@ def _execute_optimization_phase(
             status=status,
             total_wall_time=manifest["total_wall_time"],
         )
-        return result, solutions, manifest
+        return result, solutions, manifest, dataset
     except Exception as exc:
         if solutions and not stage_records:
             try:
@@ -187,7 +368,7 @@ def _execute_optimization_phase(
             exc,
             phase="optimization_error",
         )
-        return result, None, None
+        return result, None, None, None
 
 
 def evaluate_optimization_task(

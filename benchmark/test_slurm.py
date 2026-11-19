@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
 
 import pytest
 
@@ -23,19 +24,32 @@ from benchmark.config import (
 from benchmark.assignment import assignment_targets
 from benchmark.runner import (
     MANIFEST_FILENAME,
+    PHASE_TIMINGS_FILENAME,
     RESULT_FILENAME,
     TaskResult,
     evaluate_optimization_task,
     run_optimization_phase,
 )
 from benchmark.slurm import (
+    CLAIMED,
+    DONE,
+    HELD,
     MAX_SLURM_JOBS,
+    PLAN_SCHEMA_VERSION,
+    STALE_CLAIM_SECONDS,
+    ClaimStore,
+    TaskQueue,
+    claim_order,
+    execution_units,
+    expected_task_seconds,
     MAX_SUBMITTED_SLURM_JOBS,
     SlurmAllocation,
     SlurmPlan,
     _build_parser,
     _plan_allocations,
+    claims_dir,
     create_plan,
+    init_worker_process,
     load_plan,
     run_benchmark_worker,
     submission_script,
@@ -49,6 +63,15 @@ from optimization.levels import LevelSpec
 from optimization.solution import ZoneSolution
 from optimization.tests.synthetic import FakeDataset, make_grid_problem
 from optimization.visualization import RenderResult
+
+
+@pytest.fixture(autouse=True)
+def _no_cluster(monkeypatch):
+    """No test reads squeue or warms real data unless it asks to."""
+    monkeypatch.setenv("BENCHMARK_SLURM_WARM", "0")
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.setattr("benchmark.slurm.live_slurm_jobs", lambda run=None: None)
+    monkeypatch.setattr("benchmark.slurm.WORKER_START_STAGGER_SECONDS", 0.0)
 
 
 @pytest.mark.parametrize("command", ["generate", "submit"])
@@ -72,7 +95,7 @@ def test_submission_script_has_required_directives(tmp_path):
     assert script.count("sbatch --parsable -A soal -p soal") == 1
     assert script.count("--ntasks=1") == 1
     assert "--cpus-per-task=4" in script
-    assert script.count("--mem-per-cpu=8G") == 1
+    assert script.count("--mem-per-cpu=4G") == 1
     assert "--export=ALL,OMP_NUM_THREADS=1" in script
     assert "benchmark_job_0=$(sbatch" in script
     assert "--dependency" not in script
@@ -99,7 +122,7 @@ def test_matching_plan_submits_only_its_allocations(tmp_path):
     assert script.count("sbatch --parsable") == 1
     assert "--upstream-job-id" not in script
     assert "--dependency" not in script
-    assert "--mem-per-cpu=8G" in script
+    assert "--mem-per-cpu=4G" in script
     assert not (tmp_path / ".slurm" / "assignment").exists()
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
 
@@ -174,9 +197,8 @@ def test_complete_matching_sweep_submits_twelve_allocations_and_nothing_else(
     plan = _large_matching_plan(tmp_path, monkeypatch)
     assert len(plan.allocations) == MAX_SLURM_JOBS == MAX_SUBMITTED_SLURM_JOBS == 12
     assert all(allocation.cpus == 40 for allocation in plan.allocations)
-    assert sorted(i for a in plan.allocations for i in a.task_indices) == list(
-        range(1000)
-    )
+    # Every allocation claims from the one shared queue.
+    assert {a.task_indices for a in plan.allocations} == {tuple(range(1000))}
     calls = []
 
     def fake_run(command, **kwargs):
@@ -196,7 +218,7 @@ def test_complete_matching_sweep_submits_twelve_allocations_and_nothing_else(
     assert len(sbatch_calls) == 12
     for command in sbatch_calls:
         assert "--cpus-per-task=40" in command
-        assert "--mem-per-cpu=8G" in command
+        assert "--mem-per-cpu=4G" in command
         assert not any(value.startswith("--dependency") for value in command)
     subprocess.run(
         ["bash", "-n"],
@@ -474,6 +496,13 @@ class _ImmediateExecutor:
         return future
 
 
+def _fresh_claims(plan):
+    """Forget earlier runs' claims, as a regenerated plan would."""
+    import shutil
+
+    shutil.rmtree(claims_dir(plan), ignore_errors=True)
+
+
 def test_worker_enforces_allocation_and_evaluates_after_optimization(
     tmp_path, monkeypatch
 ):
@@ -487,13 +516,14 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
     plan = replace(plan, tasks=[plan.tasks[0], second_task])
     monkeypatch.setattr("benchmark.slurm.load_plan", lambda path: plan)
     events = []
-    monkeypatch.setattr(
-        "benchmark.slurm.run_optimization_phase",
-        lambda task: (
-            events.append(("optimize", task.task_id))
-            or TaskResult(task.task_id, task.output_dir, "FEASIBLE")
-        ),
-    )
+    fused_kwargs = []
+
+    def fake_fused(task, **kwargs):
+        fused_kwargs.append(kwargs)
+        events.append(("optimize+evaluate", task.task_id))
+        return TaskResult(task.task_id, task.output_dir, "ERROR")
+
+    monkeypatch.setattr("benchmark.slurm.run_optimize_and_evaluate", fake_fused)
     aggregate_calls = []
     monkeypatch.setattr(
         "benchmark.slurm.aggregate_results",
@@ -507,43 +537,36 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
 
     monkeypatch.setenv("SLURM_CPUS_PER_TASK", "8")
     _ImmediateExecutor.created = []
-    evaluation_kwargs = []
     monkeypatch.setattr("benchmark.slurm.ProcessPoolExecutor", _ImmediateExecutor)
-
-    def fake_evaluate(task, **kwargs):
-        evaluation_kwargs.append(kwargs)
-        events.append(("evaluate", task.task_id))
-        return TaskResult(task.task_id, task.output_dir, "ERROR")
-
-    monkeypatch.setattr(
-        "benchmark.slurm.evaluate_optimization_task",
-        fake_evaluate,
-    )
 
     # A saved task ERROR must not fail the allocation.
     assert run_benchmark_worker("plan.json", 0) == 0
-    assert [phase for phase, _task_id in events] == [
-        "optimize",
-        "optimize",
-        "evaluate",
-        "evaluate",
+    # Optimize and evaluate share one process per task.
+    assert sorted(events) == [
+        ("optimize+evaluate", "abc123"),
+        ("optimize+evaluate", "second"),
     ]
-    # One pool: 8 CPUs / 4 per task, a fresh process for every phase.
-    assert _ImmediateExecutor.created == [{"max_workers": 2, "max_tasks_per_child": 1}]
-    assert all(
-        kwargs["visualization"] == plan.visualization for kwargs in evaluation_kwargs
-    )
+    # One pool: 8 CPUs / 4 per task, a fresh process for every unit, each
+    # process filtering loader warnings.
+    assert _ImmediateExecutor.created == [
+        {"max_workers": 2, "max_tasks_per_child": 1, "initializer": init_worker_process}
+    ]
+    assert all(kwargs["visualization"] == plan.visualization for kwargs in fused_kwargs)
     assert len(aggregate_calls) == 1
     assert aggregate_calls[0][1]["matching_dir"] is None
 
-    def crashing_evaluate(task, **kwargs):
+    # The same plan's done claims are final: a second run finds no work.
+    events.clear()
+    assert run_benchmark_worker("plan.json", 0) == 0
+    assert events == []
+
+    def crashing(task, **kwargs):
         raise RuntimeError("worker crash")
 
-    monkeypatch.setattr(
-        "benchmark.slurm.evaluate_optimization_task", crashing_evaluate
-    )
+    _fresh_claims(plan)
+    monkeypatch.setattr("benchmark.slurm.run_optimize_and_evaluate", crashing)
     assert run_benchmark_worker("plan.json", 0) == 1
-    assert len(aggregate_calls) == 2
+    assert len(aggregate_calls) == 3
 
 
 def test_worker_matches_each_task_right_after_its_own_evaluation(
@@ -560,26 +583,34 @@ def test_worker_matches_each_task_right_after_its_own_evaluation(
             config={"workers": 1},
             output_dir=str((tmp_path / f"run-{index}").resolve()),
         )
-        for index in range(3)
+        for index in range(4)
     ]
     matching = MatchingRunConfig(enabled=True, config=str(assignment_config))
-    plan = replace(base, tasks=tasks, matching=matching)
+    plan = replace(
+        base, tasks=tasks, matching=matching, execution=ExecutionConfig()
+    )
     # Task 1 is optimized and evaluated already: it is only matched.
     _write_complete_run(tasks[1])
+    # Task 2 is optimized but not evaluated (a crash between phases): it is
+    # evaluated standalone, then matched.
+    _write_complete_run(tasks[2], phase="optimization")
+    # Task 3 is complete and matched: nothing is left.
+    _write_complete_run(tasks[3])
+    _write_matching_marker(tasks[3], matching)
     monkeypatch.setattr("benchmark.slurm.load_plan", lambda path: plan)
     monkeypatch.setattr("benchmark.slurm.ProcessPoolExecutor", _ImmediateExecutor)
-    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "3")
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "4")
     events = []
-    monkeypatch.setattr(
-        "benchmark.slurm.run_optimization_phase",
-        lambda task: (
-            events.append(("optimize", task.task_id))
-            or TaskResult(task.task_id, task.output_dir, "FEASIBLE")
-        ),
-    )
+
+    def fake_fused(task, **kwargs):
+        assert kwargs["matching"] == matching
+        events.append(("optimize+evaluate", task.task_id))
+        return TaskResult(task.task_id, task.output_dir, "FEASIBLE")
 
     def fake_evaluate(task, **kwargs):
         assert kwargs["matching"] == matching
+        # A standalone evaluate reloads what optimization saved.
+        assert "solutions" not in kwargs and "dataset" not in kwargs
         events.append(("evaluate", task.task_id))
         return TaskResult(task.task_id, task.output_dir, "FEASIBLE")
 
@@ -588,6 +619,7 @@ def test_worker_matches_each_task_right_after_its_own_evaluation(
         events.append(("match", task.task_id))
         return "complete"
 
+    monkeypatch.setattr("benchmark.slurm.run_optimize_and_evaluate", fake_fused)
     monkeypatch.setattr("benchmark.slurm.evaluate_optimization_task", fake_evaluate)
     monkeypatch.setattr("benchmark.slurm.run_task_matching", fake_match)
     aggregate_calls = []
@@ -596,23 +628,28 @@ def test_worker_matches_each_task_right_after_its_own_evaluation(
         lambda *args, **kwargs: aggregate_calls.append((args, kwargs)),
     )
 
-    # Three CPUs: every task holds a slot through all its phases.
     assert run_benchmark_worker("plan.json", 0) == 0
     by_task = {}
     for phase, task_id in events:
         by_task.setdefault(task_id, []).append(phase)
     assert by_task == {
-        "task-0": ["optimize", "evaluate", "match"],
+        "task-0": ["optimize+evaluate", "match"],
         "task-1": ["match"],
-        "task-2": ["optimize", "evaluate", "match"],
+        "task-2": ["evaluate", "match"],
     }
     assert aggregate_calls[-1][1]["matching_dir"] == "assignments"
+    # Each phase is timed in the run's phase_timings.json.
+    timings = json.loads(
+        (Path(tasks[1].output_dir) / PHASE_TIMINGS_FILENAME).read_text()
+    )
+    assert set(timings["phases"]) == {"match"}
 
     # One CPU: a task's next phase runs before the next task starts.
     events.clear()
+    _fresh_claims(plan)
     for task in tasks:
         _write_complete_run(task, status="ERROR")
-    allocation = SlurmAllocation("benchmark", (0, 1, 2), 1, 1)
+    allocation = SlurmAllocation("benchmark", (0, 1, 2, 3), 1, 1)
     monkeypatch.setattr(
         "benchmark.slurm._allocation_at", lambda plan, index: allocation
     )
@@ -620,8 +657,8 @@ def test_worker_matches_each_task_right_after_its_own_evaluation(
     assert run_benchmark_worker("plan.json", 0) == 0
     assert events == [
         (phase, f"task-{index}")
-        for index in range(3)
-        for phase in ("optimize", "evaluate", "match")
+        for index in range(4)
+        for phase in ("optimize+evaluate", "match")
     ]
 
 
@@ -644,9 +681,7 @@ def test_large_benchmark_plan_uses_twelve_allocations_and_usable_cpus(tmp_path):
     assert {item.phase for item in allocations} == {"benchmark"}
     assert {item.cpus for item in allocations} == {36}
     assert all(item.cpus // item.task_cpus == 4 for item in allocations)
-    assert sorted(index for item in allocations for index in item.task_indices) == list(
-        range(100)
-    )
+    assert {item.task_indices for item in allocations} == {tuple(range(100))}
     assert (
         submission_script(plan, tmp_path / "plan.json").count("sbatch --parsable")
         == MAX_SLURM_JOBS
@@ -1128,3 +1163,492 @@ def test_run_benchmark_worker_skips_when_valid_existing_result(tmp_path, monkeyp
 
     exit_code = run_benchmark_worker(str(plan_path), allocation_index=0)
     assert exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# The shared claim queue.
+
+
+def _queue_plan(tmp_path, count=6, **config):
+    tasks = [
+        BenchmarkTask(
+            task_id=f"task-{index}",
+            config_hash=f"hash-{index}",
+            config={"workers": 1, **config},
+            output_dir=str((tmp_path / f"run-{index}").resolve()),
+            capacity_slots=1,
+        )
+        for index in range(count)
+    ]
+    return replace(_plan(tmp_path), tasks=tasks)
+
+
+def _store(plan, job_id, *, live_jobs=None, allocation_index=0, **kwargs):
+    return ClaimStore(
+        claims_dir(plan),
+        plan_id=plan.plan_id,
+        allocation_index=allocation_index,
+        live_jobs=live_jobs,
+        job_id=job_id,
+        **kwargs,
+    )
+
+
+def _drain_queue(plan_path, job_id, out_path):
+    """One simulated allocation: claim until the queue is empty."""
+    plan = load_plan(plan_path)
+    store = _store(plan, job_id, live_jobs=frozenset({"1001", "1002"}))
+    queue = TaskQueue(plan, range(len(plan.tasks)), store)
+    claimed = []
+    while (index := queue.claim_next()) is not None:
+        claimed.append(plan.tasks[index].task_id)
+        time.sleep(0.001)
+        store.mark_done(plan.tasks[index].task_id, "complete")
+    Path(out_path).write_text(json.dumps(claimed), encoding="utf-8")
+
+
+def test_two_allocations_racing_claim_every_task_exactly_once(tmp_path):
+    import multiprocessing
+
+    plan = _queue_plan(tmp_path, count=150)
+    plan_path = write_plan(plan)
+    context = multiprocessing.get_context("spawn")
+    outputs = [tmp_path / "a.json", tmp_path / "b.json"]
+    processes = [
+        context.Process(target=_drain_queue, args=(str(plan_path), job, str(out)))
+        for job, out in zip(("1001", "1002"), outputs)
+    ]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(120)
+        assert process.exitcode == 0
+    first, second = (json.loads(path.read_text()) for path in outputs)
+    assert not set(first) & set(second)
+    assert sorted(first + second) == sorted(task.task_id for task in plan.tasks)
+
+
+def test_claims_are_atomic_and_record_their_owner(tmp_path):
+    plan = _queue_plan(tmp_path)
+    first = _store(plan, "1001", live_jobs=frozenset({"1001", "1002"}))
+    second = _store(plan, "1002", live_jobs=frozenset({"1001", "1002"}))
+
+    assert first.try_claim("task-0") == CLAIMED
+    assert second.try_claim("task-0") == HELD
+    claim = json.loads((claims_dir(plan) / "task-0.0").read_text())
+    assert claim["job_id"] == "1001"
+    assert claim["status"] == "running"
+    assert claim["plan_id"] == plan.plan_id
+    assert {"host", "pid", "claimed_at", "allocation_index"} <= set(claim)
+
+    first.mark_done("task-0", "complete")
+    assert second.try_claim("task-0") == DONE
+    # A regenerated plan reclaims what an earlier plan finished.
+    regenerated = replace(plan, created_at="2026-11-19T00:00:00+00:00")
+    third = _store(regenerated, "1003", live_jobs=frozenset({"1003"}))
+    assert third.try_claim("task-0") == CLAIMED
+    assert (claims_dir(plan) / "task-0.1").exists()
+
+
+def test_stale_claims_are_recovered(tmp_path, monkeypatch):
+    plan = _queue_plan(tmp_path)
+    dead = _store(plan, "1001", live_jobs=frozenset({"1001"}))
+    for index in range(4):
+        assert dead.try_claim(f"task-{index}") == CLAIMED
+
+    # A job squeue no longer lists, its claims older than the squeue read.
+    past = time.time() - 10
+    for index in range(4):
+        os.utime(claims_dir(plan) / f"task-{index}.0", (past, past))
+    resubmitted = _store(plan, "2002", live_jobs=frozenset({"2002"}))
+    assert resubmitted.try_claim("task-0") == CLAIMED
+    assert json.loads((claims_dir(plan) / "task-0.1").read_text())["job_id"] == "2002"
+    # Taken over once: the next claimant sees the new owner, which is live.
+    third = _store(plan, "3003", live_jobs=frozenset({"2002", "3003"}))
+    assert third.try_claim("task-0") == HELD
+
+    # A live job's claim is held, until its heartbeat is too old.
+    alive = _store(plan, "2002", live_jobs=frozenset({"1001", "2002"}))
+    assert alive.try_claim("task-1") == HELD
+    old = time.time() - STALE_CLAIM_SECONDS - 60
+    os.utime(claims_dir(plan) / "task-1.0", (old, old))
+    assert alive.try_claim("task-1") == CLAIMED
+
+    # Without squeue only the heartbeat counts, and a heartbeat keeps a
+    # claim fresh.
+    blind = _store(plan, "4004", live_jobs=None)
+    assert blind.try_claim("task-2") == HELD
+    dead.heartbeat()
+    assert blind.try_claim("task-3") == HELD
+
+    # A requeued job's earlier run (same job id, another process) is stale.
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "getpid", lambda: 999999)
+        requeued = _store(plan, "1001", live_jobs=frozenset({"1001"}))
+    assert requeued.try_claim("task-2") == CLAIMED
+
+    # A local run's claim on this host whose process is gone is stale.
+    local = _store(plan, "local-x-1", live_jobs=None)
+    assert local.try_claim("task-4") == CLAIMED
+    path = claims_dir(plan) / "task-4.0"
+    record = json.loads(path.read_text())
+    record["pid"] = 2**22 + 12345  # No such process.
+    path.write_text(json.dumps(record))
+    assert _store(plan, "local-y-2", live_jobs=None).try_claim("task-4") == CLAIMED
+
+
+def test_queue_recovers_a_dead_allocations_tasks_once_dry(tmp_path):
+    plan = _queue_plan(tmp_path, count=3)
+    other = _store(plan, "1001", live_jobs=None)
+    assert other.try_claim("task-1") == CLAIMED
+    now = [0.0]
+    store = _store(plan, "2002", live_jobs=None)
+    queue = TaskQueue(
+        plan, range(3), store, recovery_seconds=100, clock=lambda: now[0]
+    )
+
+    assert [queue.claim_next(), queue.claim_next(), queue.claim_next()] == [
+        0,
+        2,
+        None,
+    ]
+    # The other allocation dies; its heartbeat ages.
+    old = time.time() - STALE_CLAIM_SECONDS - 60
+    os.utime(claims_dir(plan) / "task-1.0", (old, old))
+    now[0] = 50.0
+    assert queue.claim_next() is None  # Throttled.
+    assert queue.claim_next(force_recovery=True) == 1
+    assert queue.claim_next(force_recovery=True) is None
+
+
+def _keyed_task(tmp_path, name, seconds, data, policy):
+    return BenchmarkTask(
+        task_id=name,
+        config_hash=f"{name}-hash",
+        config={
+            "workers": 1,
+            "data": {"scenario": data},
+            "matching_policy": policy,
+            "steps": [{"level": "Block_0", "time_limit": seconds}],
+        },
+        output_dir=str(tmp_path / name),
+        capacity_slots=1,
+    )
+
+
+def test_claim_order_is_longest_first_with_markets_adjacent(tmp_path):
+    tasks = [
+        _keyed_task(tmp_path, "aa-1", 60, "d1", "p1"),
+        _keyed_task(tmp_path, "map-d1p1-a", 1800, "d1", "p1"),
+        _keyed_task(tmp_path, "map-d1p2-a", 1800, "d1", "p2"),
+        _keyed_task(tmp_path, "map-d1p1-b", 1800, "d1", "p1"),
+        _keyed_task(tmp_path, "aa-2", 60, "d1", "p2"),
+        _keyed_task(tmp_path, "map-d2p1-a", 1800, "d2", "p1"),
+        _keyed_task(tmp_path, "map-d1p2-b", 1800, "d1", "p2"),
+    ]
+    ordered = [item.task_id for item in claim_order(tasks)]
+    assert ordered == [
+        "map-d1p1-a",
+        "map-d1p1-b",
+        "map-d1p2-a",
+        "map-d1p2-b",
+        "map-d2p1-a",
+        "aa-1",
+        "aa-2",
+    ]
+    assert expected_task_seconds({"solve_time_limits": [30, 60]}) == 60
+    assert (
+        expected_task_seconds({"strategy": "recursive", "solve_time_limits": [30, 60]})
+        == 90
+    )
+
+    plan = replace(_plan(tmp_path), tasks=claim_order(tasks))
+    # Another allocation already took the first of d1/p1.
+    assert _store(plan, "1001").try_claim("map-d1p1-a") == CLAIMED
+    queue = TaskQueue(plan, range(len(plan.tasks)), _store(plan, "2002"))
+    claimed = []
+    while (index := queue.claim_next()) is not None:
+        claimed.append(plan.tasks[index].task_id)
+    assert claimed == [
+        "map-d1p1-b",
+        "map-d1p2-a",
+        "map-d1p2-b",
+        "map-d2p1-a",
+        "aa-1",
+        "aa-2",
+    ]
+
+
+def test_queue_prefers_a_loaded_market_over_plan_order(tmp_path):
+    tasks = [
+        _keyed_task(tmp_path, name, 60, data, "p")
+        for name, data in (("a1", "A"), ("b1", "B"), ("a2", "A"), ("b2", "B"))
+    ]
+    # Plan order interleaves the markets (claim_order would not), so the
+    # preference is what keeps an allocation on its market.
+    plan = replace(_plan(tmp_path), tasks=tasks)
+    assert _store(plan, "1001").try_claim("a1") == CLAIMED
+    queue = TaskQueue(plan, range(4), _store(plan, "2002"))
+    assert [plan.tasks[queue.claim_next()].task_id for _ in range(3)] == [
+        "b1",
+        "b2",
+        "a2",
+    ]
+
+
+def test_execution_units_fuse_optimize_and_evaluate():
+    assert execution_units(("optimize", "evaluate", "match")) == (
+        "optimize+evaluate",
+        "match",
+    )
+    assert execution_units(("optimize", "evaluate")) == ("optimize+evaluate",)
+    assert execution_units(("evaluate", "match")) == ("evaluate", "match")
+    assert execution_units(("match",)) == ("match",)
+    assert execution_units(()) == ()
+
+
+def test_plan_schema_is_versioned_and_keeps_claim_order(tmp_path, monkeypatch):
+    plan = _plan(tmp_path)
+    payload = plan.to_dict()
+    assert payload["schema_version"] == PLAN_SCHEMA_VERSION == 6
+    with pytest.raises(ValueError, match="Unsupported Slurm plan schema 5"):
+        SlurmPlan.from_dict({**payload, "schema_version": 5})
+
+    def task(name, seconds):
+        return BenchmarkTask(
+            task_id=name,
+            config_hash=f"{name}-hash",
+            config={"workers": 1, "solve_time_limits": [seconds]},
+            output_dir=str(tmp_path / name),
+            capacity_slots=1,
+        )
+
+    sweep = SimulationSweep(
+        execution=ExecutionConfig(output_dir=str(tmp_path), skip_existing=False)
+    )
+    monkeypatch.setattr(
+        SimulationSweep, "from_yaml", classmethod(lambda cls, path: sweep)
+    )
+    monkeypatch.setattr(
+        SimulationSweep,
+        "generate_tasks",
+        lambda self: [task("short", 60), task("long", 600)],
+    )
+    created = create_plan(str(tmp_path / "sweep.yaml"))
+    assert [item.task_id for item in created.tasks] == ["long", "short"]
+    loaded = load_plan(str(write_plan(created)))
+    assert [item.task_id for item in loaded.tasks] == ["long", "short"]
+    assert loaded.plan_id == created.plan_id
+
+
+def test_allocations_share_one_queue_and_finish_it_together(tmp_path, monkeypatch):
+    """A second allocation starting mid-run takes the rest of the queue."""
+    plan = _queue_plan(tmp_path, count=5)
+    monkeypatch.setattr("benchmark.slurm.load_plan", lambda path: plan)
+    monkeypatch.setattr("benchmark.slurm.ProcessPoolExecutor", _ImmediateExecutor)
+    monkeypatch.setattr("benchmark.slurm.aggregate_results", lambda *a, **k: None)
+    allocation = SlurmAllocation("benchmark", tuple(range(5)), 1, 1)
+    monkeypatch.setattr("benchmark.slurm._allocation_at", lambda plan, i: allocation)
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "1")
+    live = frozenset({"1001", "1002"})
+    ran = []
+
+    def second_fused(task, **kwargs):
+        ran.append(("second", task.task_id))
+        return TaskResult(task.task_id, task.output_dir, "FEASIBLE")
+
+    def first_fused(task, **kwargs):
+        ran.append(("first", task.task_id))
+        if len(ran) == 1:
+            monkeypatch.setattr(
+                "benchmark.slurm.run_optimize_and_evaluate", second_fused
+            )
+            second = _store(plan, "1002", live_jobs=live, allocation_index=1)
+            assert run_benchmark_worker("plan.json", 1, claims=second) == 0
+        return TaskResult(task.task_id, task.output_dir, "FEASIBLE")
+
+    monkeypatch.setattr("benchmark.slurm.run_optimize_and_evaluate", first_fused)
+    first = _store(plan, "1001", live_jobs=live)
+    assert run_benchmark_worker("plan.json", 0, claims=first) == 0
+    assert ran == [("first", "task-0")] + [
+        ("second", f"task-{index}") for index in range(1, 5)
+    ]
+    for index in range(5):
+        claim = json.loads((claims_dir(plan) / f"task-{index}.0").read_text())
+        assert claim["status"] == "done"
+
+
+def test_first_wave_waits_for_its_dataset_warm_up(tmp_path, monkeypatch):
+    plan = _queue_plan(tmp_path, count=3, data={"scenario": "x"}, levels=["Block_0"])
+    monkeypatch.setenv("BENCHMARK_SLURM_WARM", "1")
+    monkeypatch.setattr("benchmark.slurm.load_plan", lambda path: plan)
+    monkeypatch.setattr("benchmark.slurm.ProcessPoolExecutor", _ImmediateExecutor)
+    monkeypatch.setattr("benchmark.slurm.aggregate_results", lambda *a, **k: None)
+    allocation = SlurmAllocation("benchmark", (0, 1, 2), 2, 1)
+    monkeypatch.setattr("benchmark.slurm._allocation_at", lambda plan, i: allocation)
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "2")
+    events = []
+
+    def fake_warm(spec):
+        events.append(("warm", tuple(spec.levels), tuple(spec.policies)))
+        return {"key": spec.key, "seconds": 0.0, "levels": {}, "markets": {}}
+
+    monkeypatch.setattr("benchmark.slurm.warm_dataset", fake_warm)
+    monkeypatch.setattr(
+        "benchmark.slurm.run_optimize_and_evaluate",
+        lambda task, **kwargs: (
+            events.append(("task", task.task_id))
+            or TaskResult(task.task_id, task.output_dir, "FEASIBLE")
+        ),
+    )
+    assert run_benchmark_worker("plan.json", 0) == 0
+    # One warm-up for the first wave's one dataset, before any of its tasks.
+    assert events[0] == ("warm", ("Block_0",), (None,))
+    assert sorted(events[1:]) == [("task", f"task-{i}") for i in range(3)]
+
+
+def test_warm_specs_group_tasks_by_dataset():
+    from benchmark.warmup import market_key, warm_specs
+
+    configs = [
+        {
+            "data": {"s": 1},
+            "matching_policy": "p1",
+            "steps": [{"level": "Block_1"}, {"level": "Block_0"}],
+        },
+        {"data": {"s": 1}, "matching_policy": "p2", "levels": ["Block_0"]},
+        {"data": {"s": 2}, "matching_policy": "p1", "levels": ["Block_0"]},
+    ]
+    specs = warm_specs(configs)
+    assert [(spec.levels, spec.policies) for spec in specs] == [
+        (["Block_1", "Block_0"], ["p1", "p2"]),
+        (["Block_0"], ["p1"]),
+    ]
+    assert market_key(configs[0]) != market_key(configs[1])
+    assert market_key(configs[0]) == market_key({**configs[0], "seed": 3})
+
+
+def test_worker_processes_show_each_loader_warning_once():
+    import warnings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.resetwarnings()
+        warnings.simplefilter("always")
+        init_worker_process()
+        namespace = {"__name__": "loaders.tables"}
+        exec("import warnings\ndef f():\n    warnings.warn('w', UserWarning)", namespace)
+        for _ in range(3):
+            namespace["f"]()
+    assert len(caught) == 1
+
+
+def test_fused_optimize_evaluate_matches_separate_phases_and_is_timed(
+    tmp_path, monkeypatch, shared_cache_root
+):
+    from benchmark.runner import (
+        load_phase_timings,
+        record_phase_timing,
+        run_optimize_and_evaluate,
+    )
+
+    problem = make_grid_problem(3, 3)
+    problem.level = LevelSpec("Block", 0)
+
+    class FakeStrategy:
+        def run(self, dataset, solver):
+            return [
+                ZoneSolution(
+                    problem=problem,
+                    assignment=_assignment(),
+                    status="FEASIBLE",
+                    objective=3.0,
+                    wall_time=1.5,
+                )
+            ]
+
+    datasets = []
+
+    def make_dataset(self):
+        datasets.append(self)
+        return FakeDataset(problem)
+
+    monkeypatch.setattr(OptimizationConfig, "make_dataset", make_dataset)
+    monkeypatch.setattr(
+        OptimizationConfig, "make_solver", lambda self, output_dir=None: object()
+    )
+    monkeypatch.setattr(
+        OptimizationConfig, "make_strategy", lambda self: FakeStrategy()
+    )
+    config = OptimizationConfig(
+        levels=["Block_0"],
+        strategy="single",
+        solver="cp_int",
+        workers=1,
+        frl_dev=1.0,
+        racial_dev=1.0,
+        overage=5.0,
+        data={
+            "scenario": "legacy",
+            "overrides": {"roots": {"cache": str(shared_cache_root)}},
+        },
+    )
+
+    def task(name):
+        return BenchmarkTask(
+            task_id="same-id",
+            config_hash="same-hash",
+            config=optimization_config_to_dict(config),
+            output_dir=str(tmp_path / name),
+            capacity_slots=1,
+        )
+
+    fused, separate = task("fused"), task("separate")
+    result = run_optimize_and_evaluate(fused, compute_stage_metrics=True)
+    assert result.status == "FEASIBLE"
+    # The fused evaluation reuses the optimization's dataset.
+    assert len(datasets) == 1
+    run_optimization_phase(separate)
+    evaluate_optimization_task(separate, compute_stage_metrics=True)
+    assert len(datasets) == 3  # A standalone evaluate builds its own.
+
+    def comparable(name):
+        text = (tmp_path / name / RESULT_FILENAME).read_text()
+        return json.loads(text.replace(str(tmp_path / name), "<run>"))
+
+    assert comparable("fused") == comparable("separate")
+    manifest = json.loads((tmp_path / "fused" / MANIFEST_FILENAME).read_text())
+    assert manifest["phase"] == "complete"
+
+    timings = load_phase_timings(fused.output_dir)
+    assert timings["schema_version"] == 1
+    assert set(timings["phases"]) == {"optimize", "evaluate"}
+    assert timings["phases"]["optimize"]["fused_with"] is None
+    evaluate = timings["phases"]["evaluate"]
+    assert evaluate["fused_with"] == "optimize"
+    assert evaluate["status"] == "FEASIBLE"
+    for record in timings["phases"].values():
+        assert record["wall_seconds"] >= 0
+        assert record["cpu_seconds"] >= 0
+        assert record["peak_rss_mb"] > 0
+        assert record["started_at"] <= record["completed_at"]
+        assert record["pid"] == os.getpid()
+    # A new optimization starts a new record.
+    record_phase_timing(fused.output_dir, dict(timings["phases"]["optimize"]))
+    assert list(load_phase_timings(fused.output_dir)["phases"]) == ["optimize"]
+
+
+def test_phase_timing_prints_one_line(tmp_path, capsys):
+    from benchmark.runner import timed_phase
+
+    task = replace(_plan(tmp_path).tasks[0], output_dir=str(tmp_path / "run"))
+    with timed_phase(task, "match") as timing:
+        timing["status"] = "COMPLETE"
+    with pytest.raises(RuntimeError):
+        with timed_phase(task, "evaluate"):
+            raise RuntimeError("boom")
+    lines = [line for line in capsys.readouterr().out.splitlines() if line]
+    assert len(lines) == 2
+    assert lines[0].startswith("phase task=abc123 phase=match status=COMPLETE wall=")
+    assert "status=CRASHED" in lines[1]
+    phases = json.loads((tmp_path / "run" / PHASE_TIMINGS_FILENAME).read_text())
+    assert set(phases["phases"]) == {"match", "evaluate"}
