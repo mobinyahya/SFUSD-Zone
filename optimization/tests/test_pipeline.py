@@ -56,8 +56,16 @@ class MemoryDataset:
 
 
 def _config(**kwargs):
+    # These tests inspect the problem each solve receives, so they see it
+    # unreduced; test_contract_fixed covers the contracted solve.
     defaults = dict(
-        hints="none", workers=1, frl_dev=1, racial_dev=1, overage=5, shortage=0
+        hints="none",
+        workers=1,
+        frl_dev=1,
+        racial_dev=1,
+        overage=5,
+        shortage=0,
+        contract_fixed=False,
     )
     return OptimizationConfig(**{**defaults, **kwargs})
 

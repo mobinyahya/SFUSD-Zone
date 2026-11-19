@@ -67,6 +67,7 @@ OPTION_FIELDS = frozenset(
         "budget_accounting",
         "release_paths",
         "keep_centroid_radius",
+        "contract_fixed",
         "choice_model_method",
         "choice_utility_scale",
         "choice_utility_hints",

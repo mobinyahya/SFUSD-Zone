@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import os
 import time
 
@@ -14,6 +14,8 @@ from optimization.data.capacity_reference import (
     apply_capacity_reference,
     build_capacity_reference,
 )
+from optimization.data.contraction import contract_fixed
+from optimization.data.feasibility import check_zoning
 from optimization.data.conversion import (
     LevelConverter,
     _node_base_ids,
@@ -24,6 +26,7 @@ from optimization.levels import LevelSpec
 from optimization.pipeline import step_config
 from optimization.problem import DuplicateCentroidError
 from optimization.solution import ZoneSolution
+from optimization.solvers.cpsat import _assignment_objective
 from optimization.strategies.base import Strategy, register
 
 
@@ -472,10 +475,113 @@ class PipelineStrategy(Strategy):
             pipeline_candidates_areas=_base_area_candidates(problem.G, candidates),
         )
         self.add_initial_hint(problem, step_solver)
-        solution = solve_objective(
-            problem, step.method, step.objective, options=step_solver.options
+        solution = solve_step_problem(
+            problem,
+            step.method,
+            step.objective,
+            step_solver.options,
+            contract=effective.contract_fixed,
         )
         return [solution], extra
+
+
+#: Methods whose solve contracts fixed groups: the CP-SAT models.
+CONTRACTED_METHODS = frozenset({"cp_bool", "cp_int"})
+#: Objectives the contraction preserves: boundary and distance costs. Market
+#: objectives index their markets by node and are solved unreduced.
+CONTRACTED_OBJECTIVES = frozenset(
+    {"cut_edges", "boundary_perimeter", "school_distance", "average_distance"}
+)
+
+
+def contraction_skip_reason(problem, method, objective, options) -> str | None:
+    """Why a solve cannot use :func:`contract_fixed`, or ``None`` if it can."""
+    if not problem.fixed:
+        return "no_fixed_nodes"
+    if method not in CONTRACTED_METHODS:
+        return "method"
+    if objective not in CONTRACTED_OBJECTIVES or problem.choice_objective is not None:
+        return "objective"
+    if problem.boundary_prop >= 0:
+        # The cap counts edges, and contraction merges parallel ones.
+        return "boundary_prop"
+    if options.get("centroid_neighbor_radius", 0):
+        # Hop distances from a centroid change when groups contract.
+        return "centroid_neighbor_radius"
+    return None
+
+
+def solve_step_problem(problem, method, objective, options, *, contract=True):
+    """Solve one step, on the contracted problem when that is possible.
+
+    The reduced solution is expanded to every original node and checked with
+    ``check_zoning`` on the original problem; on failure the original problem
+    is solved instead (``contraction_fallback`` in the metadata). The
+    objective is recomputed on the original problem, so a distance objective
+    includes the fixed groups' constant cost.
+    """
+    reason = contraction_skip_reason(problem, method, objective, options)
+    if not contract or reason is not None:
+        solution = solve_objective(problem, method, objective, options=options)
+        if contract and reason != "no_fixed_nodes":
+            solution.metadata["contraction_skipped"] = reason
+        return solution
+    started = time.perf_counter()
+    weighted = problem.weight_edges or objective == "boundary_perimeter"
+    contraction = contract_fixed(problem, weighted=weighted)
+    contract_seconds = time.perf_counter() - started
+    if contraction is None:
+        solution = solve_objective(problem, method, objective, options=options)
+        solution.metadata["contraction_skipped"] = "no_groups"
+        return solution
+    reduced = solve_objective(contraction.reduced, method, objective, options=options)
+    started = time.perf_counter()
+    view = replace(problem, weight_edges=weighted, objective=objective)
+    assignment = contraction.expand(reduced.assignment) if reduced.feasible else {}
+    report = check_zoning(view, assignment) if reduced.feasible else None
+    expand_seconds = time.perf_counter() - started
+    metadata = {
+        **contraction.metadata(),
+        "contraction_seconds": contract_seconds,
+        "contraction_expand_seconds": expand_seconds,
+    }
+    if report is not None and not report.feasible:
+        solution = solve_objective(problem, method, objective, options=options)
+        solution.metadata.update(
+            metadata,
+            contraction_fallback=True,
+            contraction_reduced_wall_time=reduced.wall_time,
+            contraction_fallback_reason=report.describe(),
+        )
+        return solution
+    metadata = {**reduced.metadata, **metadata}
+    if not weighted and metadata.get("objective_kind") == "weighted_boundary_length":
+        # The reduced edges count member edges; the solve itself is unweighted.
+        metadata.pop("objective_kind")
+        metadata.pop("objective_unit", None)
+    objective_value = reduced.objective
+    progress = list(reduced.solver_progress)
+    if reduced.feasible and reduced.objective is not None:
+        objective_value = _assignment_objective(view, assignment)
+        offset = objective_value - reduced.objective
+        progress = [
+            replace(
+                entry,
+                objective=entry.objective + offset,
+                assignment=contraction.expand_tuple(entry.assignment),
+            )
+            for entry in progress
+        ]
+        metadata["contraction_objective_offset"] = offset
+    return ZoneSolution(
+        problem=view,
+        assignment=assignment,
+        status=reduced.status,
+        objective=objective_value,
+        wall_time=reduced.wall_time,
+        metadata=metadata,
+        solver_progress=progress,
+    )
 
 
 def _skipped_duplicate_centroid(problem, exc: DuplicateCentroidError) -> ZoneSolution:

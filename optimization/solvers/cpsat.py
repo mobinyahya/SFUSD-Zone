@@ -506,6 +506,9 @@ class _CpSatSolver(Solver):
             metadata["hint_fallback"] = True
         if single_worker_lns:
             metadata["cp_sat_single_worker_lns"] = True
+        proto = m.Proto()
+        metadata["cp_model_variables"] = len(proto.variables)
+        metadata["cp_model_constraints"] = len(proto.constraints)
         if problem.choice_objective is not None:
             metadata.update(
                 {

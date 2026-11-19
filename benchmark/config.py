@@ -411,6 +411,9 @@ def optimization_config_hash(
         semantic.pop("release_paths")
     if semantic.get("keep_centroid_radius") is None:
         semantic.pop("keep_centroid_radius", None)
+    # Contraction is exact: on (the default) it changes no task id.
+    if semantic.get("contract_fixed") is True:
+        semantic.pop("contract_fixed")
     if semantic.get("objective_weights") is None:
         semantic.pop("objective_weights", None)
     # The status-quo market, and the lottery settings only a matching_policy
