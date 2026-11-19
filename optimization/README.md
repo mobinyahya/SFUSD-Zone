@@ -77,6 +77,32 @@ the centroid. Both settings are step options too, and drop
 out of task ids at their defaults, so tasks saved before these defaults keep
 their ids although they were refined with the old release (`all`, radius 0).
 
+Once the split is final, `boundary_domain_hops` (default 4; a run field and a
+step option) restricts each free block of a CP-SAT/MIP step with fixed blocks
+to its own source zone plus the source zones of blocks within that many graph
+hops, the source being the zoning the step's hints come from
+(`optimization/data/boundary_domain.py`). Zones the relaxation above opened
+are kept: blocks it widened keep their candidates untouched, and the zones it
+opens along closer-neighbor paths are kept on free blocks too, as is every
+free block's own source zone, so the hint stays inside every domain. Then any
+(block, zone) pair with no closer neighbor that can still take that zone is
+removed, to a fixed point; that pruning is exact for the closer-neighbor
+contiguity rows (skipped under `contiguity_model: flow`). It runs before the
+initial hint and the fixed-group contraction, which contracts a free block
+pruned to one zone with its fixed neighbors. `null` keeps today's distance
+candidates and drops out of task ids; the default changed them. The source
+zoning can break the closer-neighbor rows at some blocks (a ReCom shape does,
+at ~50 Block_0 blocks), and repairing such a block can need zones no nearby
+source block holds (k=1 is then infeasible). So free blocks within 2 hops of
+a broken block (`REPAIR_RADIUS`) keep every candidate zone and only the rest
+are restricted; a source the model accepts (a CP-SAT step's output) has no
+broken blocks and is always inside the restricted domains. As a backstop, a
+restricted step that still comes back `INFEASIBLE` is solved again with the
+full domains (`boundary_domain_fallback`, the restricted attempt's time in
+`boundary_domain_restricted_wall_time`). Stages record
+`boundary_domain_*` metadata (free blocks, mean/max zones per block and pairs
+before and after, pruned pairs, seconds).
+
 A step's objective defaults to the run's `objective`. Stages report
 the solver's own `wall_time`, and `carry_over_compute` hands that unused
 solver time to the next step. A step that is not the last whose coarse graph

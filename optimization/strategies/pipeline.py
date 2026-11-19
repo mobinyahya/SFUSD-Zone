@@ -14,6 +14,10 @@ from optimization.data.capacity_reference import (
     apply_capacity_reference,
     build_capacity_reference,
 )
+from optimization.data.boundary_domain import (
+    REPAIR_RADIUS,
+    restrict_boundary_domains,
+)
 from optimization.data.contraction import contract_fixed
 from optimization.data.feasibility import check_zoning
 from optimization.data.conversion import (
@@ -466,22 +470,83 @@ class PipelineStrategy(Strategy):
                 {centroid: zone for zone, centroid in enumerate(problem.centroids)}
             )
         problem.hint = hints or None
+        unrestricted = problem.candidates
+        source = hints or assigned
+        restricted = restrict_step_domains(
+            problem,
+            source,
+            step.method,
+            effective.boundary_domain_hops,
+            step_solver.options,
+            effective.release_paths,
+            repair_radius=REPAIR_RADIUS,
+        )
+        extra.update(restricted)
         extra.update(
             pipeline_fixed=fixed,
             pipeline_fixed_areas=base_area_assignment(problem.G, fixed),
             pipeline_out_of_range_areas=base_area_assignment(problem.G, out_of_range),
             pipeline_detached_areas=base_area_assignment(problem.G, islands),
-            pipeline_candidates_areas=_base_area_candidates(problem.G, candidates),
+            pipeline_candidates_areas=_base_area_candidates(
+                problem.G, problem.candidates or {}
+            ),
         )
         self.add_initial_hint(problem, step_solver)
-        solution = solve_step_problem(
-            problem,
-            step.method,
-            step.objective,
-            step_solver.options,
-            contract=effective.contract_fixed,
-        )
+
+        def solve():
+            return solve_step_problem(
+                problem,
+                step.method,
+                step.objective,
+                step_solver.options,
+                contract=effective.contract_fixed,
+            )
+
+        solution = solve()
+        if "boundary_domain_free_nodes" in restricted and solution.status == "INFEASIBLE":
+            # A backstop: with the blocks around each closer-rule violation
+            # free, the restriction has not made a feasible step infeasible
+            # in any run measured, but nothing proves it cannot.
+            restricted_time = solution.wall_time
+            problem.candidates = unrestricted
+            solution = solve()
+            solution.metadata.update(
+                boundary_domain_fallback=True,
+                boundary_domain_restricted_wall_time=restricted_time,
+            )
+            extra["pipeline_candidates_areas"] = _base_area_candidates(
+                problem.G, unrestricted or {}
+            )
         return [solution], extra
+
+
+#: Methods whose models take explicit candidate domains and write contiguity
+#: as closer-neighbour support rows (MIP unless ``contiguity_model: flow``).
+BOUNDARY_DOMAIN_METHODS = frozenset({"cp_bool", "cp_int", "mip"})
+
+
+def restrict_step_domains(
+    problem, source, method, hops, options, paths, repair_radius=None
+):
+    """Apply ``boundary_domain_hops`` to a refinement step's free nodes.
+
+    Runs on the original problem after the step's split is final -- the
+    out-of-range release and :func:`release_unreachable_assignments` have set
+    ``problem.fixed`` and the relaxation's widened ``problem.candidates`` --
+    and before the initial hint and :func:`solve_step_problem`'s contraction,
+    which therefore see the restricted candidates (a free node pruned to one
+    zone contracts with its fixed neighbours). ``source`` is the zoning the
+    step starts from, the one its hints come from. Returns metadata.
+    """
+    if hops is None or not problem.fixed:
+        return {}
+    if method not in BOUNDARY_DOMAIN_METHODS:
+        return {"boundary_domain_hops": hops, "boundary_domain_skipped": "method"}
+    prune = not (method == "mip" and options.get("contiguity_model") == "flow")
+    source = {n: z for n, z in source.items() if n in problem.G}
+    return restrict_boundary_domains(
+        problem, source, hops, prune=prune, paths=paths, repair_radius=repair_radius
+    )
 
 
 #: Methods whose solve contracts fixed groups: the CP-SAT models and the MIP.

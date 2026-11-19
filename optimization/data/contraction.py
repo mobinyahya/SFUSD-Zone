@@ -8,8 +8,9 @@ builds a smaller :class:`ZoneProblem` whose zonings expand one-to-one to the
 original problem's zonings with fixed nodes held:
 
 * per zone, each connected component (in ``G``) of nodes forced to that zone
-  -- ``fixed`` nodes and the zone's centroid whose candidate set is exactly
-  that zone -- becomes one node. A group holding the centroid becomes the
+  -- ``fixed`` nodes, the zone's centroid, and nodes whose explicit
+  ``candidates`` entry is exactly that zone (a boundary domain restricted to
+  one zone, :mod:`optimization.data.boundary_domain`) -- becomes one node. A group holding the centroid becomes the
   zone's centroid node.
 * a fixed non-centroid node none of whose closer-neighbour supports for its
   zone's school lies in its group is *held out*: it stays its own fixed node,
@@ -169,9 +170,14 @@ class _DistanceMap(Mapping):
 
 
 def forced_zones(problem: ZoneProblem) -> dict[int, int]:
-    """``{node: zone}`` for every node whose only candidate is that zone."""
+    """``{node: zone}`` for every node whose only candidate is that zone.
+
+    Fixed nodes, centroids, and nodes whose explicit ``candidates`` entry is
+    a single zone (a boundary domain pruned to one zone) all count.
+    """
     forced = {}
-    for node in set(problem.fixed or {}) | set(problem.centroids):
+    single = {n for n, zones in (problem.candidates or {}).items() if len(zones) == 1}
+    for node in set(problem.fixed or {}) | set(problem.centroids) | single:
         zones = problem.candidate_zones(node)
         if len(zones) == 1:
             forced[node] = next(iter(zones))

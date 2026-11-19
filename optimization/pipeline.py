@@ -68,6 +68,7 @@ OPTION_FIELDS = frozenset(
         "release_paths",
         "keep_centroid_radius",
         "contract_fixed",
+        "boundary_domain_hops",
         "choice_model_method",
         "choice_utility_scale",
         "choice_utility_hints",
