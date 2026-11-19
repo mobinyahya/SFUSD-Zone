@@ -1,13 +1,13 @@
 # One attendance area per school, on the CBEDS student data, with the 11-18
 # tie-breakers and the Nov 13 ideal baseline.
 #
-# The maps are drawn as in 11-06.yaml, one level coarser: shape (ReCom,
-# Block_2, 450 s) minimizes
+# The maps are drawn as in 11-06.yaml, with shape one level coarser (ReCom,
+# Block_2, 450 s); it minimizes
 #   capacity_match (weight 1): students the full MID match leaves unassigned
 #   + w * frl_dissimilarity: the two-group FRL dissimilarity across schools
 #     after that match, in percentage points (0-100),
-# with w over 0/10/30/50/100 (50 is new); then distance (CP-SAT, Block_1,
-# 600 s, school_distance) and perimeter (CP-SAT, Block_1, 600 s) refine it,
+# with w over 0/10/30/50/100 (50 is new); then distance (CP-SAT, Block_0,
+# 600 s, school_distance) and perimeter (CP-SAT, Block_0, 600 s) refine it,
 # each freeing only the cut-edge endpoints (boundary band 0),
 # holding shape's school seats and FRL counts within +/-10%
 # (capacity_reference, frl_reference_dev) and at least 20 resident students
@@ -245,7 +245,7 @@ tasks:
           recom_tree_sampler: random_mst
           hints: voronoi
       - name: distance
-        level: Block_1
+        level: Block_0
         method: cp_bool
         objective: school_distance
         time_limit: 600
@@ -255,7 +255,7 @@ tasks:
           - {source: previous, mode: assign, select: interior, radius: 0}
           - {source: previous, mode: hint, select: boundary, radius: 0}
       - name: perimeter
-        level: Block_1
+        level: Block_0
         method: cp_bool
         objective: boundary_perimeter
         time_limit: 600
