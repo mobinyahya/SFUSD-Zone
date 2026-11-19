@@ -266,6 +266,7 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `frl_reference_dev` | `0.10` | Steps with a `capacity_reference` only: relative band on each zone's frozen school FRL count; negative disables |
 | `objective_weights` | `{capacity_match: 1, frl_dissimilarity: 10}` | `weighted_sum` terms (ReCom); `frl_dissimilarity` is in percentage points |
 | `seed` | `42` | Solver seed |
+| `boundary_domain_hops` | `4` | CP-SAT/MIP refinement steps with fixed nodes: a free block may take only its own source zone and those of blocks within this many hops, then pairs the closer-neighbour contiguity rows cannot satisfy are pruned exactly (`optimization/data/boundary_domain.py`); `null` = unrestricted (and drops out of task ids) |
 | `contract_fixed` | `true` | CP-SAT refinement steps with fixed nodes solve on a problem with each connected fixed group contracted to one node (`optimization/data/contraction.py`); exact, so `true` keeps task ids |
 
 **Pipeline refinement.** A step's `inputs` project an earlier step onto its
@@ -275,7 +276,10 @@ hops. `{mode: hint, select: boundary, radius: r}` warm-starts the band
 itself. Blocks within `keep_centroid_radius` hops of their school (default:
 the interior radius) stay fixed even inside the band. A fixed block with no
 same-zone neighbor closer to its school is released along one shortest path
-toward it (`release_paths: shortest`). `capacity_reference: <step>` replaces the
+toward it (`release_paths: shortest`). Free blocks are then limited to the
+zones within `boundary_domain_hops` (keeping their own source zone and every
+zone that release opened) and pruned to the zones a closer neighbour can
+support, before the hint and the contraction. `capacity_reference: <step>` replaces the
 capacity rows' counts with that step's MID match: each zone's AA GE residents
 against the seats its school used there, within `overage`/`shortage`. With
 `frl_reference_dev`, the same holds for FRL residents.

@@ -14,6 +14,7 @@ from optimization.data.capacity_reference import (
     apply_capacity_reference,
     build_capacity_reference,
 )
+from optimization.data.boundary_domain import restrict_boundary_domains
 from optimization.data.contraction import contract_fixed
 from optimization.data.feasibility import check_zoning
 from optimization.data.conversion import (
@@ -468,11 +469,23 @@ class PipelineStrategy(Strategy):
             )
         problem.hint = hints or None
         extra.update(
+            restrict_step_domains(
+                problem,
+                hints or assigned,
+                step.method,
+                effective.boundary_domain_hops,
+                step_solver.options,
+                effective.release_paths,
+            )
+        )
+        extra.update(
             pipeline_fixed=fixed,
             pipeline_fixed_areas=base_area_assignment(problem.G, fixed),
             pipeline_out_of_range_areas=base_area_assignment(problem.G, out_of_range),
             pipeline_detached_areas=base_area_assignment(problem.G, islands),
-            pipeline_candidates_areas=_base_area_candidates(problem.G, candidates),
+            pipeline_candidates_areas=_base_area_candidates(
+                problem.G, problem.candidates or {}
+            ),
         )
         self.add_initial_hint(problem, step_solver)
         solution = solve_step_problem(
@@ -483,6 +496,31 @@ class PipelineStrategy(Strategy):
             contract=effective.contract_fixed,
         )
         return [solution], extra
+
+
+#: Methods whose models take explicit candidate domains and write contiguity
+#: as closer-neighbour support rows (MIP unless ``contiguity_model: flow``).
+BOUNDARY_DOMAIN_METHODS = frozenset({"cp_bool", "cp_int", "mip"})
+
+
+def restrict_step_domains(problem, source, method, hops, options, paths):
+    """Apply ``boundary_domain_hops`` to a refinement step's free nodes.
+
+    Runs on the original problem after the step's split is final -- the
+    out-of-range release and :func:`release_unreachable_assignments` have set
+    ``problem.fixed`` and the relaxation's widened ``problem.candidates`` --
+    and before the initial hint and :func:`solve_step_problem`'s contraction,
+    which therefore see the restricted candidates (a free node pruned to one
+    zone contracts with its fixed neighbours). ``source`` is the zoning the
+    step starts from, the one its hints come from. Returns metadata.
+    """
+    if hops is None or not problem.fixed:
+        return {}
+    if method not in BOUNDARY_DOMAIN_METHODS:
+        return {"boundary_domain_hops": hops, "boundary_domain_skipped": "method"}
+    prune = not (method == "mip" and options.get("contiguity_model") == "flow")
+    source = {n: z for n, z in source.items() if n in problem.G}
+    return restrict_boundary_domains(problem, source, hops, prune=prune, paths=paths)
 
 
 #: Methods whose solve contracts fixed groups: the CP-SAT models.

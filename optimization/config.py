@@ -254,6 +254,12 @@ class OptimizationConfig:
     # groups of fixed nodes are contracted to one node each
     # (optimization.data.contraction), which admits exactly the same zonings.
     contract_fixed: bool = True
+    # Refine steps with fixed nodes (CP-SAT/MIP): each free node may take only
+    # its own source zone and the source zones of blocks within this many
+    # graph hops, then pairs the closer-neighbour contiguity rows can never
+    # satisfy are pruned (optimization.data.boundary_domain). null leaves
+    # every free node its distance candidates.
+    boundary_domain_hops: int | None = 4
     boundary_prop: float = -1.0
     max_iterations: int = 5
     choice_model_method: str = "logsum"
@@ -493,6 +499,12 @@ class OptimizationConfig:
             value = getattr(self, name)
             if not _is_integer(value) or (minimum is not None and value < minimum):
                 raise ValueError(f"{name} must be {_INTEGER_KINDS[minimum]}.")
+        if self.boundary_domain_hops is not None and (
+            not _is_integer(self.boundary_domain_hops) or self.boundary_domain_hops < 0
+        ):
+            raise ValueError(
+                "boundary_domain_hops must be a non-negative integer or null."
+            )
         if self.keep_centroid_radius is not None and (
             not _is_integer(self.keep_centroid_radius) or self.keep_centroid_radius < 0
         ):
