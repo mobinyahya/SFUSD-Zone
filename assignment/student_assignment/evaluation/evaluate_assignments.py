@@ -7,6 +7,7 @@ from ..market_generator.school_choice_market_generator import (
     MarketGenerator,
 )
 
+from ..lottery_files import read_saved_lottery
 from .match_evaluator import MatchEvaluator
 
 
@@ -18,7 +19,9 @@ class EvaluateAssignments:
 
     @staticmethod
     def _read_assignment(path: pathlib.Path) -> pd.DataFrame:
-        assignment = pd.read_csv(path)
+        # A lottery saved in the long-format file is read by its per-lottery
+        # path; a plain CSV (an old run, or the real match) is read as is.
+        assignment = read_saved_lottery(path)
         if "studentno" not in assignment:
             raise ValueError(f"Assignment is missing studentno: {path}")
         if (
