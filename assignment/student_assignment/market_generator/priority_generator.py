@@ -14,6 +14,14 @@ import pandas as pd
 from loaders import lowell_selective
 
 from .policy import Policy
+from .policy_market import (
+    ctip_key,
+    not_designation_mask,
+    policy_market_zone_eligibility,
+    priorities_without_lottery,
+    round_priority_boost,
+    zones_are_set,
+)
 
 
 class PriorityGenerator:
@@ -113,8 +121,7 @@ class PriorityGenerator:
         """
         cache_key = id(self.market.students)
         if cache_key not in self._round_priorities_cache:
-            first_round = self.market.students.first_round
-            boost = 1000 * (first_round.max() - first_round)
+            boost = round_priority_boost(self.market.students.first_round)
             self._round_priorities_cache[cache_key] = np.outer(
                 boost, np.ones(self.market.num_programs)
             )
@@ -128,6 +135,16 @@ class PriorityGenerator:
         if cache_key in self._policy_priorities_cache:
             return self._policy_priorities_cache[cache_key]
 
+        policy_market = self._policy_market()
+        if policy_market is not None and ctip_key(ctip) in policy_market.tiers:
+            # Shared path: the policy market's tiers under this zoning.
+            priorities = policy_market.policy_priorities(
+                self.market.zones.zone_priority_matrix, ctip
+            )
+            self._policy_priorities_cache[cache_key] = priorities
+            return priorities
+
+        # Own path (no policy market): build the priorities from the market.
         if self.market.grade == "06":
             priorities = self._sixth_grade_priorities()
             priorities += self._get_attendance_area_priorities()
@@ -252,6 +269,19 @@ class PriorityGenerator:
         priorities += self._get_attendance_area_priorities()
         self._policy_priorities_cache[cache_key] = priorities
         return priorities
+
+    def _policy_market(self):
+        """The market's shared ``PolicyMarket``, or ``None`` for the own path."""
+        policy_market = getattr(self.market, "policy_market", None)
+        if policy_market is None or not zones_are_set(self.market.zones):
+            return None
+        return policy_market()
+
+    def _zone_eligibility(self) -> np.ndarray:
+        policy_market = self._policy_market()
+        if policy_market is None:
+            return self.market.zones.zone_eligibility_matrix
+        return policy_market_zone_eligibility(self.market, policy_market)
 
     def _get_promotion_priorities(self) -> np.ndarray:
         """Return the configured boost at each student's TK-to-K feeder.
@@ -948,20 +978,11 @@ class PriorityGenerator:
         )
 
     def _set_not_designation_priority(self, preferences):
-        not_designation = np.zeros([self.market.n, self.market.num_programs])
-        pref_lengths = np.asarray(
-            self.market.preference_generator.pref_length, dtype=int
+        return not_designation_mask(
+            preferences,
+            self.market.preference_generator.pref_length,
+            self.market.num_programs,
         )
-        pref_lengths = np.clip(pref_lengths, 0, preferences.shape[1])
-        preference_positions = np.arange(preferences.shape[1])
-        listed_mask = preference_positions < pref_lengths[:, np.newaxis]
-        program_idxs = preferences[listed_mask].astype(int) - 1
-        student_idxs = np.repeat(np.arange(self.market.n), pref_lengths)
-        valid_programs = np.logical_and(
-            program_idxs >= 0, program_idxs < self.market.num_programs
-        )
-        not_designation[student_idxs[valid_programs], program_idxs[valid_programs]] = 1
-        return not_designation
 
     def set_policy_specific_priorities(
         self,
@@ -986,29 +1007,9 @@ class PriorityGenerator:
     def get_priorities_with_lottery(
         self, policy: Policy, preferences: np.ndarray
     ) -> np.ndarray:
-        """Get priority component from a specific policy without lottery.
-
-        Args:
-            policy (Policy): policy data object
-            preferences (np.ndarray): (num students) by (num programs) array with student
-                preferences
-
-        Returns:
-            np.ndarray: (num students) by (num programs) array with policy priority component
-        """
-        round_priorities = self._round_priorities()
-        priorities = self._set_policy_priorities(policy.ctip, policy.name)
-        not_designation_mask = self._set_not_designation_priority(preferences)
-        non_designation_boost = self.market.config.get("non_designation_boost", 100)
-        final = (
-            round_priorities
-            + np.multiply(priorities, not_designation_mask)
-            + not_designation_mask * non_designation_boost
-        )
-        if self.market.config["restrict-zone"]:
-            zone_mask = self.market.zones.zone_eligibility_matrix
-            return np.multiply(final, zone_mask) - (1 - zone_mask) * 500
-        return final
+        """Deprecated alias of :meth:`get_priorities_without_lottery`, which it
+        has always equalled: it adds no lottery."""
+        return self.get_priorities_without_lottery(policy, preferences)
 
     def get_priorities_without_lottery(
         self, policy: Policy, preferences: np.ndarray
@@ -1023,16 +1024,11 @@ class PriorityGenerator:
         Returns:
             np.ndarray: (num students) by (num programs) array with policy priority component
         """
-        round_priorities = self._round_priorities()
-        priorities = self._set_policy_priorities(policy.ctip, policy.name)
-        not_designation_mask = self._set_not_designation_priority(preferences)
-        non_designation_boost = self.market.config.get("non_designation_boost", 100)
-        final = (
-            round_priorities
-            + np.multiply(priorities, not_designation_mask)
-            + not_designation_mask * non_designation_boost
+        return priorities_without_lottery(
+            self._round_priorities(),
+            self._set_policy_priorities(policy.ctip, policy.name),
+            self._set_not_designation_priority(preferences),
+            self.market.config.get("non_designation_boost", 100),
+            self.market.config["restrict-zone"],
+            self._zone_eligibility,
         )
-        if self.market.config["restrict-zone"]:
-            zone_mask = self.market.zones.zone_eligibility_matrix
-            return np.multiply(final, zone_mask) - (1 - zone_mask) * 500
-        return final

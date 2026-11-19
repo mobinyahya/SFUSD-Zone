@@ -1,6 +1,13 @@
 import numpy as np
 import pandas as pd
 
+from .policy_market import (
+    distance_orderings,
+    policy_market_zone_eligibility,
+    program_type_eligibility,
+    zones_are_set,
+)
+
 
 #: ``utility-model.list-length`` that ranks exactly the programs a student's
 #: drawn utility puts above their drawn outside option. The estimate must be
@@ -49,6 +56,20 @@ class PreferenceGenerator:
             self.pref_length = pref_length.copy()
             return prefs
 
+        policy_market = self._policy_market() if designate else None
+        if policy_market is not None:
+            # Shared path: the zoning-independent market, under this zoning.
+            prefs = self._policy_market_preferences(policy_market, add_aa_schools)
+            if cache_context is not None:
+                self._real_preferences_cache[cache_key] = (
+                    prefs,
+                    self.pref_length.copy(),
+                )
+            return prefs
+
+        # Own path: settings the policy market does not reproduce
+        # (policy_market.unmodelled_policy_settings), designate=False, or a
+        # market without one.
         prefs = np.zeros((self.market.n, self.market.num_programs))
         prefs[:, :] = self.market.students.selected_preferences(
             self.market.programs.index_list
@@ -72,6 +93,29 @@ class PreferenceGenerator:
                 prefs,
                 self.pref_length.copy(),
             )
+        return prefs
+
+    def _policy_market(self):
+        """The market's shared ``PolicyMarket``, or ``None`` for the own path."""
+        policy_market = getattr(self.market, "policy_market", None)
+        if policy_market is None or not zones_are_set(self.market.zones):
+            return None
+        return policy_market()
+
+    def _policy_market_preferences(self, policy_market, add_aa_schools: bool):
+        zones = self.market.zones
+        eligibility = policy_market_zone_eligibility(self.market, policy_market)
+        appended = None
+        if add_aa_schools:
+            appended = policy_market.appended_programs(
+                zones.zone_priority_matrix,
+                generated_zones=self.market.config.get(
+                    "zone-building-blocks", "attendance_area"
+                )
+                != "attendance_area",
+                citywide_program_ids=getattr(zones, "citywide_program_ids", []),
+            )
+        prefs, self.pref_length = policy_market.preferences(eligibility, appended)
         return prefs
 
     def _collapse_to_attendance_area_ge(self, prefs: np.ndarray) -> np.ndarray:
@@ -257,19 +301,12 @@ class PreferenceGenerator:
         distances = self.market.students.distance_data
         map_matrix = self.market.zones.zone_eligibility_matrix
         # sort distances by closest to furthest for every student
-        lp_distances = distances[
-            [x for x in distances.columns if x.split("-")[1] != "GE"]
-        ]
-        lp_sorted_distances = lp_distances.apply(
-            lambda row: pd.Series(lp_distances.columns[np.argsort(row.values)]),
-            axis=1,
+        lp_columns, lp_order, ge_columns, ge_order = distance_orderings(distances)
+        lp_sorted_distances = pd.DataFrame(
+            np.asarray(lp_columns, dtype=object)[lp_order], index=distances.index
         )
-        ge_distances = distances[
-            [x for x in distances.columns if x.split("-")[1] == "GE"]
-        ]
-        ge_sorted_distances = ge_distances.apply(
-            lambda row: pd.Series(ge_distances.columns[np.argsort(row.values)]),
-            axis=1,
+        ge_sorted_distances = pd.DataFrame(
+            np.asarray(ge_columns, dtype=object)[ge_order], index=distances.index
         )
 
         def _get_student_designation_ordering(studentno):
@@ -406,24 +443,9 @@ class PreferenceGenerator:
             np.ndarray: A 0-1 (num students) by (num programs) matrix, where True indicates the student is eligible for
                 that program
         """
-        eligibility_map = self.market.students.get_qualified_programs_dict()
-        program_type_idxs = self.market.programs.program_type_to_indices
-        eligible = np.zeros((self.market.n, self.market.num_programs))
-        for (
-            student_idx,
-            studentno,
-        ) in self.market.students.idx2studentno.items():
-            for program_type in eligibility_map[studentno]:
-                if (
-                    program_type
-                    in self.market.programs.program_df["program_type"].unique()
-                ):
-                    eligible[
-                        student_idx,
-                        [x - 1 for x in program_type_idxs[program_type]],
-                    ] = 1
-
-        return eligible
+        return program_type_eligibility(
+            self.market.programs, self.market.students
+        ).astype(float)
 
     def _remove_ineligible_programs(
         self, preferences: np.ndarray, eligible: np.ndarray

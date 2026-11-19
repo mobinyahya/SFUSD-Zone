@@ -19,6 +19,12 @@ from loaders import (
 
 from ..configerator import Configerator
 from ..data_interfaces import Programs, Schools, Students, Zones
+from .policy_market import (
+    PolicyMarket,
+    load_policy_market,
+    policy_market_settings,
+    unmodelled_policy_settings,
+)
 from .utility_model import UtilityModel
 
 
@@ -52,8 +58,8 @@ def vintage_geography_roles(data_scenario) -> list[str]:
     ]
 
 
-def assignment_source_identity(data_scenario) -> str:
-    """Fingerprint immutable assignment inputs without loading their tables."""
+def assignment_source_roles(data_scenario) -> list[str]:
+    """The immutable source roles one assignment market is loaded from."""
     roles = list(ASSIGNMENT_IMMUTABLE_SOURCE_ROLES)
     if data_scenario.filter("assignment", "capacity_scenario") != "programs":
         roles.append("assignment.capacity")
@@ -65,9 +71,16 @@ def assignment_source_identity(data_scenario) -> str:
         if role in ASSIGNMENT_OPTIONAL_IMMUTABLE_SOURCE_ROLES
     )
     roles.extend(vintage_geography_roles(data_scenario))
+    return roles
+
+
+def assignment_source_identity(data_scenario) -> str:
+    """Fingerprint immutable assignment inputs without loading their tables."""
     # The manifest carries every filter, the assignment selectors included.
     encoded = json.dumps(
-        data_scenario.source_manifest(roles), sort_keys=True, separators=(",", ":")
+        data_scenario.source_manifest(assignment_source_roles(data_scenario)),
+        sort_keys=True,
+        separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -228,11 +241,37 @@ class SchoolChoiceMarket:
             grade=self.grade,
         )
 
+    def policy_market(self) -> PolicyMarket | None:
+        """The shared zoning-independent market of the active policy.
+
+        ``None`` when the policy sets something it does not reproduce
+        (:func:`~.policy_market.unmodelled_policy_settings`); the generators
+        then build the lists and priorities with their own code.
+        """
+        if unmodelled_policy_settings(self.config, "simulator"):
+            return None
+        key = json.dumps(policy_market_settings(self.config), sort_keys=True)
+        cache = self.__dict__.setdefault("_policy_markets", {})
+        if key not in cache:
+            market = load_policy_market(
+                self.data_scenario,
+                self.config,
+                market_data=lambda: (self.programs, self.schools, self.students),
+            )
+            if not market.matches(self.students):
+                raise ValueError(
+                    "The cached policy market's students or programs differ from "
+                    "the loaded market's."
+                )
+            cache[key] = market
+        return cache[key]
+
     def _initialize_market_data(self):
         """Load the market's programs, schools, and students."""
         self.programs, self.schools, self.students = load_market_data(
             self.data_scenario
         )
+        self._policy_markets = {}
         self.n = self.students.n
         self.num_programs = self.students.num_programs
         self._reset_zones()
