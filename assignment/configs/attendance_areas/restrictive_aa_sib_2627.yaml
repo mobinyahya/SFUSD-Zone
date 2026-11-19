@@ -27,11 +27,7 @@ output_dir: /soalnas/share/data/school_choice/local_runs/attendance_areas/restri
 random-seed: 2023
 export-aggregate-metrics: true
 export-local-metrics: true
-# Per-ZIP and per-attendance-area reports recompute the full report per area
-# (~97% of evaluation time); the 11-18 sweep reads the citywide, program and
-# zone reports only.
-export-area-metrics: false
-export_heatmaps: false
+export_heatmaps: true
 reuse_assignments: true
 
 r1-only: true

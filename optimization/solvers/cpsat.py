@@ -70,6 +70,36 @@ _AssignmentVars = dict[tuple[int, int], cp_model.IntVar]
 _ZoneVars = dict[int, cp_model.IntVar]
 
 
+def _complete_hint(model: cp_model.CpModel, budget: float) -> bool:
+    """Replace a model's hint with a full solution extending it, if one exists.
+
+    A hint usually fixes only the assignment variables. Solving a copy with
+    those fixed leaves just the auxiliary variables, which propagation all but
+    determines, and the solution found hints every variable. Spends at most a
+    tenth of ``budget``; returns whether the hint was completed.
+    """
+    hint = model.proto.solution_hint
+    if not len(hint.vars):
+        return False
+    probe = model.clone()
+    probe.clear_hints()
+    for index, value in zip(hint.vars, hint.values, strict=True):
+        probe.add(probe.get_int_var_from_proto_index(index) == value)
+    probe.clear_objective()
+    solver = cp_model.CpSolver()
+    solver.parameters.num_search_workers = 1
+    solver.parameters.max_time_in_seconds = max(1.0, 0.1 * float(budget))
+    if solver.solve(probe) not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return False
+    model.clear_hints()
+    for index in range(len(model.proto.variables)):
+        model.add_hint(
+            model.get_int_var_from_proto_index(index),
+            solver.value(probe.get_int_var_from_proto_index(index)),
+        )
+    return True
+
+
 def _feasible_hint(problem: ZoneProblem) -> dict[int, int] | None:
     """The problem's hint with its fixed nodes, when that is a feasible zoning."""
     from optimization.data.feasibility import check_zoning
@@ -391,9 +421,12 @@ class _CpSatSolver(Solver):
             # hint. Interleaving the subsolvers in that one thread and
             # searching by neighbourhoods of the hinted zoning instead finds
             # and improves solutions (a Block_0 refinement: none in 600 s
-            # otherwise, a 46% better objective in 60 s with it).
+            # otherwise, a 46% better objective in 60 s with it). The search
+            # starts from the hint only once every variable is hinted, so the
+            # auxiliary (cut-edge, contiguity) variables are completed first.
             solver.parameters.interleave_search = True
             solver.parameters.use_lns_only = True
+            _complete_hint(m, solver.parameters.max_time_in_seconds)
         log_path = self._next_solver_log_path(problem)
         log_file = None
         if log_path:

@@ -455,6 +455,11 @@ class PipelineStrategy(Strategy):
         problem.fixed = fixed or None
         problem.candidates = candidates or None
         if hints:
+            # Hint the fixed interior as well, so the hint is the whole source
+            # zoning: CP-SAT takes a complete hint as its first solution, but
+            # a partial one (only the free boundary) must be completed by
+            # search first, which a single worker often fails to do.
+            hints.update(fixed)
             hints.update(
                 {centroid: zone for zone, centroid in enumerate(problem.centroids)}
             )
