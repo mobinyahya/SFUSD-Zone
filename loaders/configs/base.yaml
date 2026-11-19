@@ -148,6 +148,33 @@ files:
     root: data
     classification: restricted
     geography_vintage: "2010"
+  # The same four tables with their blanks filled from the district's
+  # corrected full student file (Nov 18 2026 transfer) by
+  # analysis/data_prep/fill_from_full_student_file.py: ethnicity, home
+  # language, zip code, English proficiency, SPED, and -- for students with no
+  # coordinates -- location, Census geography and Block indices. No value the
+  # tables above carry is changed. The 2026-27 school year reads these by
+  # default; the tables above stay selectable through overrides.sources.
+  optimization.students.applicant.2627.full_file:
+    path: Data/Cleaned/student_2627_with_full_file.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled.2627.full_file:
+    path: Data/Cleaned/enrolled_2627_with_full_file.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.enrolled_all.2627.full_file:
+    path: Data/Cleaned/enrolled_all_2627_with_full_file.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  optimization.students.applied_or_enrolled.2627.full_file:
+    path: Data/Cleaned/applied_or_enrolled_2627_with_full_file.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
 
   assignment.students.1415:
     path: Data/Cleaned/student_1415.csv
@@ -211,6 +238,11 @@ files:
     geography_vintage: "2010"
   assignment.students.2627:
     path: Data/Cleaned/student_2627.csv
+    root: data
+    classification: restricted
+    geography_vintage: "2010"
+  assignment.students.2627.full_file:
+    path: Data/Cleaned/student_2627_with_full_file.csv
     root: data
     classification: restricted
     geography_vintage: "2010"
@@ -1335,16 +1367,16 @@ school_years:
   "2627":
     optimization:
       students:
-        applicant: optimization.students.applicant.2627
-        enrolled: optimization.students.enrolled.2627
-        enrolled_all: optimization.students.enrolled_all.2627
-        applied_or_enrolled: optimization.students.applied_or_enrolled.2627
+        applicant: optimization.students.applicant.2627.full_file
+        enrolled: optimization.students.enrolled.2627.full_file
+        enrolled_all: optimization.students.enrolled_all.2627.full_file
+        applied_or_enrolled: optimization.students.applied_or_enrolled.2627.full_file
     assignment:
       students:
-        applicant: assignment.students.2627
-        enrolled: optimization.students.enrolled.2627
-        enrolled_all: optimization.students.enrolled_all.2627
-        applied_or_enrolled: optimization.students.applied_or_enrolled.2627
+        applicant: assignment.students.2627.full_file
+        enrolled: optimization.students.enrolled.2627.full_file
+        enrolled_all: optimization.students.enrolled_all.2627.full_file
+        applied_or_enrolled: optimization.students.applied_or_enrolled.2627.full_file
       grades:
         KG:
           profiles:
