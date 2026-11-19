@@ -597,12 +597,12 @@ Fields shared by both groups follow these rules:
 | Field | Accepted values and behavior |
 |---|---|
 | `grades` / `grade` | Optimization `grades` is a non-empty, duplicate-free list and assignment `grade` a single value, each `PK`, `TK`, `KG`, or zero-padded `"01"` through `"12"`. Student and program rows are restricted to the selected grades. |
-| `student_population` | `applicant` or `enrolled`; selects that population from the school-year registry. |
+| `student_population` | `applicant` or `enrolled`, and for 2026-27 also `enrolled_all` or `applied_or_enrolled`; selects that population from the school-year registry. `applicant` is the Main Round market and `enrolled` the part of it that enrolled. `enrolled_all` is every student the CBEDS census-day roster enrols at the grade at a real school, applicant or not. `applied_or_enrolled` is the market plus the CBEDS enrollees outside it, whose built list is their enrolled program, or else their attendance-area GE program (`pref_source: cbeds_enrolled`). A year that does not register the requested population fails. |
 | `rounds` | `all` or a non-empty, duplicate-free list of positive integers. Explicit lists are sorted and every requested round must exist in the student table. |
 | `special_programs` | `include`, `exclude_only_special`, or `exclude_any_special`. `exclude_only_special` removes special-program preferences; `exclude_any_special` removes students listing a special program in a selected round. Both exclusion modes remove special program rows. |
 | `capacity_scenario` | Non-empty string. `programs` retains capacities in the selected program table; another value selects an external capacity overlay. |
 | `include_mission_bay` | Boolean. False removes Mission Bay -- school ID 1731 and its legacy placeholders 999 and 909 -- from school-keyed records and preferences. True normalizes both placeholders to `1731`, in school-keyed records, preferences, centroid lists, and choice-estimate program columns. |
-| `include_mandarin_immersion` | Boolean, default `false`. True adds the base `planned_schools.mandarin_immersion` entry -- school `400`, citywide, programs `400-ME-KG`/`400-MN-KG` -- to the school and program tables, where a selected capacity scenario sets its seats like any other. The entry's site (`lat`/`lon`) and per-pool seats are still null, and a scenario that sets this true fails to load, naming each missing value; none is assumed. False leaves every cache key unchanged. |
+| `include_mandarin_immersion` | Boolean, default `false`. True adds the base `planned_schools.mandarin_immersion` entry -- school `400`, citywide, programs `400-ME-KG`/`400-MN-KG` -- to the school and program tables, where a selected capacity scenario sets its seats like any other. The entry's site (`lat`/`lon`, the Ortega/Starr King midpoint) and its per-pool seats (27 ME / 39 MN, the two schools' combined KG Mandarin seats) are placeholders until the district names a site; a null value fails the load, naming it. Its `demand_proxy` inserts `400-<pathway>` directly after each student's first ME/MN choice at 746 or 838, at the next listed rank (later choices move down one) and with its lottery number. False leaves every cache key unchanged. |
 | `geography_vintage` | Four-digit string registered in base `geographies`; currently `"2010"` or `"2020"`. |
 | `frl_estimate` | Name registered in base `student_frl_estimates`, or `null` to retain FRL fields from the selected student table. |
 | `outside_district_students` | `ignore` or `include`. When normalized student data has a `census_block` column, `ignore` removes rows with no selected-geography Block and `include` retains them. If that column is absent, this filter leaves the table unchanged. Optimization graph construction still rejects retained students lacking its selected geography. |
@@ -809,7 +809,7 @@ A registered entry may instead name an overlay file, for either group:
 
 ```yaml
 capacity_scenarios:
-  ideal_webster_w2w_2627:
+  ideal_webster_w2w_10_23_26:
     source: capacity.sfusd.2627
 ```
 
@@ -818,17 +818,20 @@ replacing the scenario's own binding (a run's `overrides.sources` still wins),
 and reads its `Scenario_<name>_Capacity` column as below.
 
 The checked-in overlays are the district's 2026-27 kindergarten "ideal
-capacity" scenarios (`Capacities for Stanford (2026-27).xlsx`), converted by
-`analysis/data_prep/convert_capacity_workbook.py`:
+capacity" scenarios (`Capacities for Stanford (2026-27).xlsx`, plus the
+November 13 baseline sent as its own tab), converted by
+`analysis/data_prep/convert_capacity_workbook.py`. Each is named after its
+sheet, date included:
 
 | Name | Scenario |
 |---|---|
-| `ideal_baseline_2627` | Every classroom used, current program mix |
-| `ideal_bessie_ge_2627` | Baseline, with Carmichael (449) GE as an attendance-area program |
-| `ideal_webster_w2w_2627` | Baseline, with Webster (497) wall-to-wall Spanish DLI |
-| `ideal_alvarado_w2w_2627` | Baseline, with Alvarado (420) wall-to-wall Spanish DLI |
-| `ideal_westportal_w2w_2627` | Baseline, with West Portal (876) wall-to-wall Cantonese DLI |
-| `ideal_star_king_w2w_2627` | Baseline, with Starr King (838) wall-to-wall Mandarin DLI |
+| `ideal_baseline_aug_2026` | Every classroom used, current program mix |
+| `ideal_baseline_nov_13_2026` | The revised baseline ("FLO Functional 2028-29"): Garfield CAN DLI, Glen Park SP BIL and Moscone CAN BIL become GE; Lau, Milk, Hillcrest and Sherman gain a GE room; Lakeshore, Rosa Parks and SF Public Montessori lose one. No Mandarin Immersion TK-8 seats |
+| `ideal_bessie_ge_10_23_26` | Baseline, with Carmichael (449) GE as an attendance-area program |
+| `ideal_webster_w2w_10_23_26` | Baseline, with Webster (497) wall-to-wall Spanish DLI |
+| `ideal_alvarado_w2w_10_23_26` | Baseline, with Alvarado (420) wall-to-wall Spanish DLI |
+| `ideal_westportal_w2w_10_23_26` | Baseline, with West Portal (876) wall-to-wall Cantonese DLI |
+| `ideal_star_king_w2w_10_23_26` | Baseline, with Starr King (838) wall-to-wall Mandarin DLI |
 
 The workbook is the source of truth for these scenarios twice over: for the
 seats, and for which schools are attendance-area schools. A school with any

@@ -206,11 +206,13 @@ def test_10_24_sweep_pairs_all_ideal_scenarios_and_freezes_shape(monkeypatch):
     catalog = yaml.safe_load(
         (path.parents[3] / "loaders/configs/base.yaml").read_text()
     )
+    # The 10-24 sweep predates the Nov 13 baseline: the six Aug workbook tabs.
     expected = {
         s
         for s in catalog["capacity_scenarios"]
-        if s.startswith("ideal_") and s.endswith("2627")
+        if s.startswith("ideal_") and s != "ideal_baseline_nov_13_2026"
     }
+    assert len(expected) == 6
     assert {task.optimization_config().capacity_scenario for task in tasks} == expected
     for task in tasks:
         config = task.optimization_config()

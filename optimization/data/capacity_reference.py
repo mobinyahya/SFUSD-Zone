@@ -16,7 +16,10 @@ from optimization.solvers.burst_objectives import (
     is_general_education,
 )
 
-CAPACITY_REFERENCE_SCHEMA_VERSION = 2
+CAPACITY_REFERENCE_SCHEMA_VERSION = 3
+#: Versions ``apply_capacity_reference`` still reads. Version 2 predates the
+#: FRL counts, so a saved v2 stage cannot hold the ``frl_reference`` rows.
+READABLE_SCHEMA_VERSIONS = frozenset({2, 3})
 
 
 def build_capacity_reference(problem, zoning, market, lottery_scale):
@@ -30,6 +33,12 @@ def build_capacity_reference(problem, zoning, market, lottery_scale):
     to residents proportionally to their unmatched mass. Students left
     unassigned contribute to neither side of the capacity constraints, so each
     source zone's counted students equal its occupied seats by construction.
+
+    The same split is kept for expected FRL students (each type's FRL share of
+    its mass): ``frl_students_by_area`` are the FRL residents counted above and
+    ``frl_seats_by_school`` the FRL students occupying each school's seats, so
+    the ``frl_reference`` rows can hold each zone's school FRL count near the
+    source zoning's.
     """
     if not problem.level.is_base or problem.program_population != "All":
         raise ValueError(
@@ -66,15 +75,22 @@ def build_capacity_reference(problem, zoning, market, lottery_scale):
         )
     departures = defaultdict(float)
     assigned = defaultdict(float)
+    assigned_frl = defaultdict(float)
     unmatched_by_node = defaultdict(float)
+    unmatched_frl_by_node = defaultdict(float)
     unmatched = defaultdict(float)
+    used_frl = defaultdict(float)
+    programs = {p.program_id: p for p in market.programs}
     for student_type, masses, remaining in zip(
         market.types, result.assignment_masses, result.remaining_masses, strict=True
     ):
+        frl_share = student_type.frl_sum / student_type.count
         for program_id, mass in zip(student_type.programs, masses, strict=True):
-            assigned[student_type.node] += (
-                student_type.count * mass / lottery_scale * shares[program_id]
-            )
+            to_aa = student_type.count * mass / lottery_scale * shares[program_id]
+            assigned[student_type.node] += to_aa
+            assigned_frl[student_type.node] += frl_share * to_aa
+            if to_aa:
+                used_frl[programs[program_id].school_id] += frl_share * to_aa
             departures[student_type.node] += (
                 student_type.count * mass / lottery_scale * (1 - shares[program_id])
             )
@@ -84,6 +100,7 @@ def build_capacity_reference(problem, zoning, market, lottery_scale):
             / lottery_scale
         )
         unmatched_by_node[student_type.node] += remaining_count
+        unmatched_frl_by_node[student_type.node] += frl_share * remaining_count
         unmatched[zoning[student_type.node]] += remaining_count
 
     used = defaultdict(float)
@@ -103,10 +120,14 @@ def build_capacity_reference(problem, zoning, market, lottery_scale):
     designated_by_zone = {
         zone: min(count, free_by_zone[zone]) for zone, count in unmatched.items()
     }
+    designated_frl_by_zone = defaultdict(float)
     for node, count in unmatched_by_node.items():
         zone = zoning[node]
         if unmatched[zone]:
-            assigned[node] += count * designated_by_zone[zone] / unmatched[zone]
+            fraction = designated_by_zone[zone] / unmatched[zone]
+            assigned[node] += count * fraction
+            assigned_frl[node] += unmatched_frl_by_node[node] * fraction
+            designated_frl_by_zone[zone] += unmatched_frl_by_node[node] * fraction
     designated = 0.0
     for school, seats in free.items():
         zone = school_zones[school]
@@ -118,6 +139,8 @@ def build_capacity_reference(problem, zoning, market, lottery_scale):
         )
         used[school] += taken
         designated += taken
+        if total_free:
+            used_frl[school] += designated_frl_by_zone.get(zone, 0.0) * seats / total_free
 
     return {
         "schema_version": CAPACITY_REFERENCE_SCHEMA_VERSION,
@@ -127,6 +150,10 @@ def build_capacity_reference(problem, zoning, market, lottery_scale):
             int(problem.G.nodes[n]["area_id"]): assigned[n] for n in problem.nodes
         },
         "seats_by_school": dict(used),
+        "frl_students_by_area": {
+            int(problem.G.nodes[n]["area_id"]): assigned_frl[n] for n in problem.nodes
+        },
+        "frl_seats_by_school": {school: used_frl.get(school, 0.0) for school in used},
         "non_aa_students": sum(departures.values()),
         "designated_students": designated,
         "unassigned_students": max(0.0, sum(unmatched.values()) - designated),
@@ -136,7 +163,7 @@ def build_capacity_reference(problem, zoning, market, lottery_scale):
 def apply_capacity_reference(problem, reference):
     """Attach portable reference counts to a solve, including a saved stage."""
     if (
-        reference.get("schema_version") != CAPACITY_REFERENCE_SCHEMA_VERSION
+        reference.get("schema_version") not in READABLE_SCHEMA_VERSIONS
         or reference.get("unit") != problem.level.unit
     ):
         raise ValueError(
@@ -163,3 +190,21 @@ def apply_capacity_reference(problem, reference):
         n: sum(seats.get(int(s), 0.0) for s in problem.G.nodes[n].get("school_ids", []))
         for n in problem.nodes
     }
+    if "frl_students_by_area" in reference:
+        frl_students = {
+            int(a): float(v) for a, v in reference["frl_students_by_area"].items()
+        }
+        frl_seats = {
+            int(s): float(v) for s, v in reference["frl_seats_by_school"].items()
+        }
+        problem.frl_reference_student_counts = {
+            n: sum(frl_students.get(a, 0.0) for a in _node_base_ids(problem.G, n))
+            for n in problem.nodes
+        }
+        problem.frl_reference_seat_counts = {
+            n: sum(
+                frl_seats.get(int(s), 0.0)
+                for s in problem.G.nodes[n].get("school_ids", [])
+            )
+            for n in problem.nodes
+        }

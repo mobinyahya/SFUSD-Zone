@@ -60,6 +60,17 @@ def balance_constraints(problem: ZoneProblem) -> list[BalanceConstraint]:
             ),
         )
 
+    if problem.has_frl_reference:
+        constraints.append(
+            BalanceConstraint(
+                kind="frl_reference",
+                value=problem.frl_reference_seats,
+                lower_ratio=1.0 - problem.frl_reference_dev,
+                upper_ratio=1.0 + problem.frl_reference_dev,
+                denominator=problem.frl_reference_students,
+            )
+        )
+
     if problem.racial_dev >= 0:
         racial = problem.district_racial
         for ethnicity in problem.ethnicities:

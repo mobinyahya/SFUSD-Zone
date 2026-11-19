@@ -95,6 +95,21 @@ This is not the classic two-group dissimilarity index. The basic report also
 preserves the benchmark's historical implementation, including its compact
 school iteration, so existing benchmark values do not change.
 
+`Dissimilarity (FRL)`, in both reports, *is* the classic two-group index,
+between FRL and non-FRL students across schools, in percentage points:
+
+```text
+50 * sum_school(abs(frl_school / frl_total
+                    - (students_school - frl_school) / (students_total - frl_total)))
+```
+
+`frl_school` sums each assigned student's FRL probability, so membership is
+fractional and no threshold is involved. It is the quantity the optimization
+objective `frl_dissimilarity` reads off the MID match (see
+`optimization/solvers/burst_objectives.py`), so a map's objective value and
+its matched value are directly comparable. `Dissimilarity (High FRL)` stays as
+the thresholded, one-sided lens.
+
 Absolute exposure of group `G` to group/property `P` is:
 
 ```text

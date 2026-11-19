@@ -9,9 +9,10 @@
 # cleaned tables before trusting a number from this year.
 #
 # Which schools own an attendance area is the capacity workbook's call: a
-# workbook capacity scenario (`ideal_baseline_2627` and its variants) sets every
-# school table's `category`, for both groups, and nothing else overrides it.
-# Under `ideal_baseline_2627` that is 59 attendance-area schools: the 58 of the
+# workbook capacity scenario (`ideal_baseline_aug_2026`, `ideal_baseline_nov_13_2026`
+# and the variants) sets every school table's `category`, for both groups, and
+# nothing else overrides it. Under either baseline that is 59 attendance-area
+# schools: the 58 of the
 # 2013 map plus Mission Bay (1731). The 14 citywide schools stay open to every
 # zone (`include_citywide_zoning: false`, `include_citywide_choice_opt: true`).
 # Left at `capacity_scenario: programs`, the school tables' own `category`

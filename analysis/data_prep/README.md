@@ -19,13 +19,37 @@ Per year, below `--out` (default `<data root>/Data/Cleaned`):
 | File | Contents |
 |---|---|
 | `student_<year>.csv` | Every applicant, every grade, one preference round. At kindergarten that includes the students SFUSD promotes in from TK, who filed no request; `mr_applicant` says which rows did |
-| `enrolled_<year>.csv` | The kindergarten subset of `student_<year>.csv` the post-run seats |
+| `enrolled_<year>.csv` | The kindergarten subset of `student_<year>.csv` the post-run seats and that enrolled |
+| `enrolled_all_<year>.csv` | Only with `--enrollment-transfer`: every student the CBEDS roster enrols at KG at a real school (charters included), market or not |
+| `applied_or_enrolled_<year>.csv` | Only with `--enrollment-transfer`: `student_<year>.csv` plus the CBEDS enrollees outside the market (`pref_source: cbeds_enrolled`, `mr_applicant: 0`) |
 | `programs_<year>.csv`, `programs_withMissionBay_<year>.csv` | Every kindergarten program in that year's Main Round capacity file, at gross `TotalSeats` |
 | `programs_06_<year>.csv`, `programs_09_<year>.csv` | Grade 6 and 9 programs observed that year, at borrowed capacity |
 | `sfusd_transfer_report_<year>.md` / `.json` | Every absent column, blank output, substituted value, and derivation |
 
 No school table is written: the transfer has no school coordinates, so the
 registry reuses the 2023-24 school tables.
+
+`--enrollment-transfer "<data root>/Data/raw_SFUSD_data_downloads/Oct 27 2026
+data transfer"` reads that drop's CBEDS census-day roster and coordinate file,
+and makes CBEDS the enrolment record in place of the demographics extract.
+Its "full student file" is not read. Where a student's CBEDS record has a blank
+grade or school 899, that file overwrote their Main Round grade (2,468 SY26-27
+rows); the Main Round side of it is the post-run, which is read directly.
+The district's corrected file (`Nov 18 2026 data transfer/SY26-27/out_updated_SY26-27
+full student file.csv`) fixes this and is kept only as a cross-check. It holds
+the same 58,541 students. Its 2,581 changed rows are the roster's placeholder
+records (2,473 at school 899 with no grade, 108 PK at early-education
+schools): the corrected file marks them `CBEDS = N` and restores their Main
+Round grade and school. The converter already counts such records as not
+enrolled, so no cleaned table changes. Its other differences are export noise:
+lower-case headers, two-digit years, coordinates rounded by at most 8e-6
+degrees, three mis-encoded street names, and three `RaceX` codes in scientific
+notation.
+CBEDS `SES` is also not used for FRL: only 17% of kindergartners are flagged,
+against about 50% in grades 1-12, because new kindergartners are not yet
+certified. FRL stays the block-level index or the `frl_estimate`.
+The SY26-27 counts: a market of 3,996, 3,652 CBEDS KG enrollees, 3,253 in
+both, and a union of 4,395.
 
 ## What is missing, and how it is resolved
 

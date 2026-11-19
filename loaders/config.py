@@ -85,7 +85,20 @@ _FILTER_KEYS = {
 PLANNED_SCHOOL_FILTERS = {"include_mandarin_immersion": "mandarin_immersion"}
 _CANONICAL_YEAR = re.compile(r"^\d{4}$")
 _CANONICAL_GRADES = {"PK", "TK", "KG", *(f"{grade:02d}" for grade in range(1, 13))}
-_STUDENT_POPULATIONS = {"applicant", "enrolled"}
+#: Populations every school year must register.
+_REQUIRED_STUDENT_POPULATIONS = {"applicant", "enrolled"}
+#: Every population a year may register. ``applicant`` is the Main Round
+#: market and ``enrolled`` the part of it that enrolled; the CBEDS roster
+#: (2026-27 on, see ``analysis/data_prep/convert_sfusd_transfer.py``) adds
+#: ``enrolled_all`` -- everyone enrolled at the grade on census day, applicant
+#: or not -- and ``applied_or_enrolled``, the union of the market and that.
+STUDENT_POPULATIONS = frozenset(
+    {*_REQUIRED_STUDENT_POPULATIONS, "enrolled_all", "applied_or_enrolled"}
+)
+_STUDENT_POPULATIONS = STUDENT_POPULATIONS
+#: Populations made of students who enrolled. The assignment group drops any
+#: row of them with no enrolled school (blank or 899).
+ENROLLED_STUDENT_POPULATIONS = frozenset({"enrolled", "enrolled_all"})
 _SPECIAL_PROGRAM_MODES = {"include", "exclude_only_special", "exclude_any_special"}
 _FILTER_DEFAULTS = {
     "capacity_scenario": "programs",
@@ -109,6 +122,12 @@ _ASSIGNMENT_GRADE_KEYS = {"profiles"}
 _ASSIGNMENT_VARIANT_KEYS = {"programs", "programs_catalog", "schools"}
 _CAPACITY_SCENARIO_KEYS = {"year", "include_mission_bay", "adjust"}
 _CAPACITY_OVERLAY_KEYS = {"source"}
+#: ``demand_proxy`` -- ``{schools: [...], programs: [...]}``: when the school
+#: is included, every student ranking one of ``programs`` at one of
+#: ``schools`` also ranks the planned school's program of that type, directly
+#: after their first such choice. A school with no applicants of its own has
+#: no demand otherwise.
+_PLANNED_SCHOOL_OPTIONAL_KEYS = {"demand_proxy"}
 _PLANNED_SCHOOL_KEYS = {
     "school_id",
     "school_name",
@@ -763,7 +782,8 @@ def _validate_filters(
             values["student_population"] not in _STUDENT_POPULATIONS
         ):
             raise ValueError(
-                f"{label}.{group}.student_population must be applicant or enrolled."
+                f"{label}.{group}.student_population must be one of "
+                f"{sorted(_STUDENT_POPULATIONS)}."
             )
         if "special_programs" in values and (
             values["special_programs"] not in _SPECIAL_PROGRAM_MODES
@@ -834,7 +854,7 @@ def _validate_population_sources(
 ) -> None:
     sources = _require_map(value, label)
     _unknown_keys(sources, _STUDENT_POPULATIONS, label)
-    missing = sorted(_STUDENT_POPULATIONS - set(sources))
+    missing = sorted(_REQUIRED_STUDENT_POPULATIONS - set(sources))
     if missing:
         raise ValueError(f"{label} is missing populations: {missing}.")
     for population, source in sources.items():
@@ -1024,7 +1044,11 @@ def _validate_planned_schools(value: Any) -> None:
     for name, entry_value in schools.items():
         label = f"Base planned_schools.{name}"
         entry = _require_map(entry_value, label)
-        _unknown_keys(entry, _PLANNED_SCHOOL_KEYS, f"planned_schools.{name}")
+        _unknown_keys(
+            entry,
+            _PLANNED_SCHOOL_KEYS | _PLANNED_SCHOOL_OPTIONAL_KEYS,
+            f"planned_schools.{name}",
+        )
         missing = sorted(_PLANNED_SCHOOL_KEYS - set(entry))
         if missing:
             raise ValueError(f"{label} is missing {missing}.")
@@ -1042,6 +1066,23 @@ def _validate_planned_schools(value: Any) -> None:
                 isinstance(coordinate, bool) or not isinstance(coordinate, int | float)
             ):
                 raise ValueError(f"{label}.{key} must be a number or null.")
+        proxy = entry.get("demand_proxy")
+        if proxy is not None:
+            proxy = _require_map(proxy, f"{label}.demand_proxy")
+            _unknown_keys(proxy, {"schools", "programs"}, f"{label}.demand_proxy")
+            for key in ("schools", "programs"):
+                values = proxy.get(key)
+                if not isinstance(values, list) or not values:
+                    raise ValueError(
+                        f"{label}.demand_proxy.{key} must be a non-empty list."
+                    )
+            if any(
+                isinstance(school, bool) or not isinstance(school, int)
+                for school in proxy["schools"]
+            ):
+                raise ValueError(f"{label}.demand_proxy.schools must be integers.")
+            for program in proxy["programs"]:
+                _nonempty_string(program, f"{label}.demand_proxy.programs entry")
         grades = _require_map(entry["programs"], f"{label}.programs")
         if not grades:
             raise ValueError(f"{label}.programs must not be empty.")
@@ -1402,10 +1443,11 @@ def _assignment_sources(
 
     population = filters["student_population"]
     students = assignment["students"].get(population)
-    if students is None:  # pragma: no cover - base validation currently requires both
+    if students is None:
         raise ValueError(
             f"Assignment {population!r} students are unavailable for school year "
-            f"{year!r}."
+            f"{year!r}; registered populations are "
+            f"{sorted(assignment['students'])}."
         )
     bundle = variants[variant]
     generated = {

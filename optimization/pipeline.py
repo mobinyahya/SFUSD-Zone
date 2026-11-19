@@ -26,6 +26,8 @@ CONSTRAINT_FIELDS = frozenset(
         "shortage",
         "max_distance",
         "boundary_prop",
+        "min_zone_residents",
+        "frl_reference_dev",
         "centroid_neighbor_radius",
     }
 )

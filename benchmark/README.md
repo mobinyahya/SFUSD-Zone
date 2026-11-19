@@ -87,8 +87,8 @@ sweep:
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_baseline_2627}
-          assignment: {capacity_scenario: ideal_baseline_2627}
+          optimization: {capacity_scenario: ideal_baseline_aug_2026}
+          assignment: {capacity_scenario: ideal_baseline_aug_2026}
 ```
 
 A scenario with no `assignment` filter group cannot be matched.

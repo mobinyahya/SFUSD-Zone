@@ -25,6 +25,7 @@ from optimization.mid_options import (
     normalize_complementary_slackness_slack,
 )
 from optimization.data.contiguity import RELEASE_PATHS
+from optimization.data.conversion import ATTENDANCE_AREA_HINT
 from optimization.strategies.budget import BUDGET_ACCOUNTING_MODES
 from choice.models import PRICE_SOURCES
 from optimization.welfare_bounds import WELFARE_BOUNDS
@@ -92,6 +93,14 @@ _INTEGER_KINDS = {
 # Numeric fields, coerced to float: the error message and the bounds.
 _NUMBERS = {
     "boundary_prop": ("must be at most 1; negative disables it", {"maximum": 1.0}),
+    "min_zone_residents": (
+        "must be finite; negative disables it",
+        {"finite": True},
+    ),
+    "frl_reference_dev": (
+        "must be finite; negative disables it",
+        {"finite": True},
+    ),
     "feasible_hint_time_limit": (
         "must be positive",
         {"minimum": 0.0, "open_minimum": True, "finite": True},
@@ -160,6 +169,12 @@ class OptimizationConfig:
     # --- optimization parameters -------------------------------------- #
     frl_dev: float = 0.3
     racial_dev: float = 0.3
+    # Minimum resident students (``all_prog_students``) per zone; negative
+    # disables it.
+    min_zone_residents: float = -1.0
+    # With a capacity_reference, the relative band on each zone's frozen
+    # school FRL count (see ZoneProblem.frl_reference_dev); negative disables.
+    frl_reference_dev: float = -1.0
     overage: float = 0.8
     shortage: float = 0.2
     looseness: float = 1.0
@@ -173,6 +188,8 @@ class OptimizationConfig:
     # Path to a saved zoning: a run's ``zonings.json.xz`` (its final stage) or
     # an ``{area_id: zone}`` JSON. When set it is projected onto every
     # level by area id and becomes the problem's hint, ahead of ``hints``.
+    # A saved zoning to start from, or ``attendance_areas``: today's
+    # attendance areas (the 2013 map), one zone per attendance-area school.
     hint_zoning: str | None = None
     feasible_hint_time_limit: float = 60.0
     save_solver_logs: bool = False
@@ -585,8 +602,12 @@ class OptimizationConfig:
             if not isinstance(self.hint_zoning, (str, Path)) or not str(
                 self.hint_zoning
             ):
-                raise ValueError("hint_zoning must be a file path or null.")
-            self.hint_zoning = str(Path(self.hint_zoning).expanduser())
+                raise ValueError(
+                    "hint_zoning must be a file path, "
+                    f"{ATTENDANCE_AREA_HINT!r}, or null."
+                )
+            if str(self.hint_zoning) != ATTENDANCE_AREA_HINT:
+                self.hint_zoning = str(Path(self.hint_zoning).expanduser())
         if self.recom_iterations < 0 and not self.solve_time_limits:
             raise ValueError(
                 "solve_time_limits must include a value when recom_iterations is negative."
@@ -612,6 +633,12 @@ class OptimizationConfig:
             for index, step in enumerate(self.steps):
                 # Each step config validates its own objective's market needs.
                 effective = step_config(self, step, index)
+                if effective.frl_reference_dev >= 0 and step.capacity_reference is None:
+                    raise ValueError(
+                        f"Step {step.name!r} sets frl_reference_dev without a "
+                        "capacity_reference, which is where its FRL counts come "
+                        "from; set it on the refining steps only."
+                    )
                 if step.capacity_reference is not None:
                     effective._check_market("capacity_reference")
 

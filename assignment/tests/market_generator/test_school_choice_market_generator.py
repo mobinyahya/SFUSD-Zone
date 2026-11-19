@@ -143,7 +143,7 @@ def test_enrollment_real_match_requires_the_enrolled_population():
     frame = pd.DataFrame({"enrolled_idschool": [420]})
     market = _enrollment_market("applicant", frame)
 
-    with pytest.raises(ValueError, match="requires the enrolled population"):
+    with pytest.raises(ValueError, match="requires an enrolled population"):
         market._enrolled_school_program(frame)
 
 

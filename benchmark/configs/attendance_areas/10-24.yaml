@@ -46,33 +46,33 @@ sweep:
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_baseline_2627}
-          assignment: {capacity_scenario: ideal_baseline_2627}
+          optimization: {capacity_scenario: ideal_baseline_aug_2026}
+          assignment: {capacity_scenario: ideal_baseline_aug_2026}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_bessie_ge_2627}
-          assignment: {capacity_scenario: ideal_bessie_ge_2627}
+          optimization: {capacity_scenario: ideal_bessie_ge_10_23_26}
+          assignment: {capacity_scenario: ideal_bessie_ge_10_23_26}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_webster_w2w_2627}
-          assignment: {capacity_scenario: ideal_webster_w2w_2627}
+          optimization: {capacity_scenario: ideal_webster_w2w_10_23_26}
+          assignment: {capacity_scenario: ideal_webster_w2w_10_23_26}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_alvarado_w2w_2627}
-          assignment: {capacity_scenario: ideal_alvarado_w2w_2627}
+          optimization: {capacity_scenario: ideal_alvarado_w2w_10_23_26}
+          assignment: {capacity_scenario: ideal_alvarado_w2w_10_23_26}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_westportal_w2w_2627}
-          assignment: {capacity_scenario: ideal_westportal_w2w_2627}
+          optimization: {capacity_scenario: ideal_westportal_w2w_10_23_26}
+          assignment: {capacity_scenario: ideal_westportal_w2w_10_23_26}
     - scenario: attendance-areas-2627
       overrides:
         filters:
-          optimization: {capacity_scenario: ideal_star_king_w2w_2627}
-          assignment: {capacity_scenario: ideal_star_king_w2w_2627}
+          optimization: {capacity_scenario: ideal_star_king_w2w_10_23_26}
+          assignment: {capacity_scenario: ideal_star_king_w2w_10_23_26}
 
 tasks:
   - steps:

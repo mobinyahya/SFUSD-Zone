@@ -9,7 +9,7 @@
 # no centroid edit. The 14 citywide schools own no area and hold no graph node.
 #
 # Capacities are the district's 2026-27 kindergarten workbook scenario
-# ideal_baseline_2627 (every classroom used, current program mix), set on both
+# ideal_baseline_aug_2026 (every classroom used, current program mix), set on both
 # groups because matching requires the zoning and its market to agree. The
 # Mandarin Immersion TK-8 is a planned school that stays out of this market
 # (`include_mandarin_immersion` defaults to false). The enrollment share is set
@@ -60,8 +60,8 @@ optimization_defaults:
     scenario: attendance-areas-2627
     overrides:
       filters:
-        optimization: {capacity_scenario: ideal_baseline_2627}
-        assignment: {capacity_scenario: ideal_baseline_2627}
+        optimization: {capacity_scenario: ideal_baseline_aug_2026}
+        assignment: {capacity_scenario: ideal_baseline_aug_2026}
   centroids_type: all
   hints: voronoi
   workers: 8
@@ -127,7 +127,7 @@ visualization:
   stages: final
 
 # Every feasible zoning is matched under restrictive_aa in its own task's data
-# (ideal_baseline_2627); the assignment config sets only the policy,
+# (ideal_baseline_aug_2026); the assignment config sets only the policy,
 # iterations and metrics.
 matching:
   enabled: true

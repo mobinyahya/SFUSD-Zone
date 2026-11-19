@@ -71,21 +71,24 @@ def workbook(tmp_path: Path) -> Path:
     )
 
 
-def test_scenario_names_drop_dates_and_the_word_capacity():
-    assert scenario_name("Ideal Capacity Baseline (Aug 2026)", "2627") == (
-        "ideal_baseline_2627"
+def test_scenario_names_keep_the_sheet_date_and_drop_the_word_capacity():
+    assert scenario_name("Ideal Capacity Baseline (Aug 2026)", None) == (
+        "ideal_baseline_aug_2026"
     )
-    assert scenario_name("Ideal Capacity + WestPortal W2W (10.23.26)", None) == (
-        "ideal_westportal_w2w"
+    assert scenario_name("Ideal Capacity Baseline (Nov 13, 2026)", None) == (
+        "ideal_baseline_nov_13_2026"
+    )
+    assert scenario_name("Ideal Capacity + WestPortal W2W (10.23.26)", "2627") == (
+        "ideal_westportal_w2w_10_23_26_2627"
     )
 
 
 def test_every_scenario_tab_becomes_capacity_and_category_columns(
     workbook,
 ):
-    frame = convert(workbook, suffix="2627").set_index(["SchNum", "PathwayCode"])
+    frame = convert(workbook).set_index(["SchNum", "PathwayCode"])
 
-    names = ["ideal_baseline_2627", "ideal_alvarado_w2w_2627"]
+    names = ["ideal_baseline_aug_2026", "ideal_alvarado_w2w_10_23_26"]
     assert [column for column in frame.columns if column.endswith("_Capacity")] == [
         f"Scenario_{name}_Capacity" for name in names
     ]
@@ -107,11 +110,11 @@ def test_every_scenario_tab_becomes_capacity_and_category_columns(
 def test_school_codes_are_corrected_and_new_schools_get_their_placeholder(
     workbook,
 ):
-    frame = convert(workbook, suffix="2627").set_index(["SchNum", "PathwayCode"])
+    frame = convert(workbook).set_index(["SchNum", "PathwayCode"])
 
     assert frame.loc[(1731, "GE"), "SheetSchoolCode"] == 731
     assert frame.loc[(400, "ME+MN"), "SchoolName"] == "Mandarin Immersion TK-8"
-    assert frame.loc[(400, "ME+MN"), "Scenario_ideal_baseline_2627_Capacity"] == 66
+    assert frame.loc[(400, "ME+MN"), "Scenario_ideal_baseline_aug_2026_Capacity"] == 66
     assert frame.index.get_level_values("SchNum").tolist() == sorted(
         frame.index.get_level_values("SchNum")
     )
@@ -139,7 +142,7 @@ def test_a_mislabelled_school_type_is_reported_and_the_seats_win(tmp_path, capsy
 
     frame = convert(path)
 
-    assert frame["Scenario_ideal_baseline_Category"].tolist() == ["Attendance"]
+    assert frame["Scenario_ideal_baseline_aug_2026_Category"].tolist() == ["Attendance"]
     assert "Alamo ES is labelled 'Citywide'" in capsys.readouterr().err
 
 
@@ -158,9 +161,9 @@ def test_a_program_split_between_seat_types_keeps_its_attendance_area_share(
 
     (row,) = convert(path).to_dict("records")
 
-    assert row["Scenario_ideal_baseline_Capacity"] == 66
-    assert row["Scenario_ideal_baseline_AttendanceAreaCapacity"] == 44
-    assert row["Scenario_ideal_baseline_Category"] == "Attendance"
+    assert row["Scenario_ideal_baseline_aug_2026_Capacity"] == 66
+    assert row["Scenario_ideal_baseline_aug_2026_AttendanceAreaCapacity"] == 44
+    assert row["Scenario_ideal_baseline_aug_2026_Category"] == "Attendance"
 
     with pytest.raises(ValueError, match="repeats rows"):
         convert(
@@ -170,3 +173,52 @@ def test_a_program_split_between_seat_types_keeps_its_attendance_area_share(
                 ["Ideal Capacity Baseline (Aug 2026)"],
             )
         )
+
+
+def _csv_tab(path: Path, rows: list[tuple]) -> Path:
+    """A single tab exported from Google Sheets, with the baseline's header."""
+    header = [*HEADER[:7], "School type (baseline)", "FLO note"]
+    preamble = [["Baseline: Ideal capacity seats"], [], header]
+    pd.DataFrame(preamble + [list(row) for row in rows]).to_csv(
+        path, index=False, header=False
+    )
+    return path
+
+
+def test_a_csv_tab_joins_the_workbook_scenarios_under_its_file_name(
+    workbook, tmp_path, capsys
+):
+    label = "FLO Functional 2028-29"
+    csv = _csv_tab(
+        tmp_path / "Capacities for Stanford (2026-27) - Ideal Capacity Baseline "
+        "(Nov 13, 2026).csv",
+        [
+            (label, 413, "Alamo ES", "GE", "TK", 40, AA, AA, ""),
+            (label, 413, "Alamo ES", "GE", "K", 88, AA, AA, "added a room"),
+            (label, 413, "Alamo ES", "SDC", "K", 5, "SDC (IEP placement)", AA, ""),
+            (label, 420, "Alvarado ES", "GE", "K", 44, AA, AA, ""),
+            # A two-pool program listed once per pool, pools unnamed.
+            (label, 420, "Alvarado ES", "SP DLI", "K", 18, CW, AA, ""),
+            (label, 420, "Alvarado ES", "SP DLI", "K", 26, CW, AA, ""),
+            (label, 420, "Alvarado ES", "GE", "1", 66, AA, AA, ""),
+        ],
+    )
+
+    frame = convert([workbook, csv]).set_index(["SchNum", "PathwayCode"])
+
+    new = "Scenario_ideal_baseline_nov_13_2026"
+    assert "Scenario_ideal_baseline_aug_2026_Capacity" in frame.columns
+    assert frame.loc[(413, "GE"), f"{new}_Capacity"] == 88
+    assert frame.loc[(420, "SE+SN"), f"{new}_Capacity"] == 44
+    assert frame.loc[(420, "SE+SN"), f"{new}_Category"] == "Attendance"
+    # Only kindergarten is read, and SDC seats are not lottery seats.
+    assert set(frame["Grade"]) == {"K"}
+    assert "5 SDC (IEP placement) seats" in capsys.readouterr().err
+    # A school the tab does not list has no seats in it.
+    assert frame.loc[(400, "ME+MN"), f"{new}_Capacity"] == 0
+
+
+def test_a_csv_tab_must_be_named_after_its_tab(tmp_path):
+    rows = [("Baseline", 413, "Alamo ES", "GE", "K", 66, AA, AA, "")]
+    with pytest.raises(ValueError, match="<workbook> - <tab name>"):
+        convert(_csv_tab(tmp_path / "baseline.csv", rows))

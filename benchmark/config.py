@@ -17,6 +17,7 @@ import yaml
 
 from loaders import DataScenario, anchor_data_config
 from optimization.config import OptimizationConfig
+from optimization.data.conversion import ATTENDANCE_AREA_HINT
 from optimization.objectives import get_objective
 
 
@@ -414,6 +415,8 @@ def optimization_config_hash(
         semantic.pop("objective_weights", None)
     if semantic.get("hint_zoning") is None:
         semantic.pop("hint_zoning", None)
+    elif semantic["hint_zoning"] == ATTENDANCE_AREA_HINT:
+        pass  # Built from the scenario's attendance-area map source.
     else:
         # Name the zoning by content, so a moved or re-mounted file keeps its
         # task id and a rewritten one does not.

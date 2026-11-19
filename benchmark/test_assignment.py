@@ -635,12 +635,12 @@ def test_matching_requires_target_data_and_agreeing_selectors(tmp_path):
     data = {
         "scenario": "attendance-areas-2627",
         "overrides": {
-            "filters": {"optimization": {"capacity_scenario": "ideal_baseline_2627"}}
+            "filters": {"optimization": {"capacity_scenario": "ideal_baseline_aug_2026"}}
         },
     }
     with pytest.raises(
-        ValueError, match="capacity_scenario: 'ideal_baseline_2627' != 'programs'"
+        ValueError, match="capacity_scenario: 'ideal_baseline_aug_2026' != 'programs'"
     ):
         matching_data(data)
-    data["overrides"]["filters"]["assignment"] = {"capacity_scenario": "ideal_baseline_2627"}
+    data["overrides"]["filters"]["assignment"] = {"capacity_scenario": "ideal_baseline_aug_2026"}
     assert matching_data(data) == data
