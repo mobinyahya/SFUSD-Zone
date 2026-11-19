@@ -49,16 +49,27 @@ def aggregate_results(
     *,
     summary_csv: str | None = None,
     stages_csv: str | None = None,
+    matching_dir: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Aggregate outputs under a shared sidecar lock using atomic CSV writes."""
+    """Aggregate outputs under a shared sidecar lock using atomic CSV writes.
+
+    With ``matching_dir`` (a sweep's ``matching.assignment_dir``), also
+    rebuild the sweep's matching reports there from the runs' own
+    (:func:`benchmark.assignment.aggregate_matching_metrics`).
+    """
 
     root = str(Path(root_folder).expanduser().resolve())
     with _aggregation_lock(root):
-        return _aggregate_results_unlocked(
+        frames = _aggregate_results_unlocked(
             root,
             summary_csv=summary_csv,
             stages_csv=stages_csv,
         )
+        if matching_dir:
+            from benchmark.assignment import aggregate_matching_metrics
+
+            aggregate_matching_metrics(root, matching_dir)
+        return frames
 
 
 def _aggregate_results_unlocked(
