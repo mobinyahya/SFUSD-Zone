@@ -61,6 +61,12 @@ optimization_defaults:
   mid_preference_source: stated
   capacity_match_unassigned_weight: 1
   capacity_match_designated_weight: 0
+  # Refinements free only cut-edge endpoints (inputs radius 0) but keep each
+  # school's block and its neighbours in the source zone fixed, so a school on
+  # its zone's boundary stays joined to the zone's fixed interior. No solve
+  # forces a school's neighbours into its zone (centroid_neighbor_radius 0).
+  keep_centroid_radius: 1
+  centroid_neighbor_radius: 0
   constraints:
     frl_dev: -1
     racial_dev: -1
