@@ -28,7 +28,7 @@ from loaders import (
     load_school_records,
     load_student_records,
 )
-from loaders.geography import _normalize_geoid, _normalize_geoid_int64
+from loaders.geography import _BlankGeoids, _normalize_geoid, _normalize_geoid_int64
 from loaders.table_cache import TABLE_CACHE_ENV, TableKey, cached_table
 from loaders.tables import _literal_list, _simple_literal_list
 
@@ -502,6 +502,8 @@ def test_simple_literal_lists_match_ast(text):
     [
         pd.Series([60750101001000, 60750101001001], dtype="int64"),
         pd.Series([1, 2], dtype="uint32"),
+        pd.Series([60750101001000, None], dtype="Int64"),
+        pd.Series([60750101001000, 1], dtype="Int64"),
         pd.Series(["060750101001000", "60750101001001.0"]),
         pd.Series([60750101001000.0, 60750101001001.0]),
         pd.Series([-5, 1], dtype="int64"),
@@ -509,12 +511,18 @@ def test_simple_literal_lists_match_ast(text):
     ],
 )
 def test_integer_geoid_normalization_matches_the_string_path(values):
+    # What every caller did before: normalise, reject blanks, cast.
     try:
-        expected = _normalize_geoid(values, length=15, label="test").astype("int64")
+        normalized = _normalize_geoid(values, length=15, label="test")
     except ValueError as exc:
         with pytest.raises(ValueError, match=re.escape(str(exc))):
             _normalize_geoid_int64(values, length=15, label="test")
         return
+    if normalized.isna().any():
+        with pytest.raises(_BlankGeoids):
+            _normalize_geoid_int64(values, length=15, label="test")
+        return
+    expected = normalized.astype("int64")
     pd.testing.assert_series_equal(
         _normalize_geoid_int64(values, length=15, label="test"), expected
     )

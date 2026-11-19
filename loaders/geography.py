@@ -68,7 +68,7 @@ def _normalize_geoid_int64(values: pd.Series, *, length: int, label: str) -> pd.
     (non-negative, at most ``length`` digits) is the identity; any other
     column, and any invalid ID, takes the string path and its errors.
     """
-    if values.dtype.kind in "iu":
+    if isinstance(values.dtype, np.dtype) and values.dtype.kind in "iu":
         array = values.to_numpy()
         if not len(array) or (array.min() >= 0 and array.max() < 10**length):
             return values.astype("int64")
