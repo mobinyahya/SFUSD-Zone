@@ -23,6 +23,13 @@ from loaders.geography import (
     require_geography_vintage,
     selected_geography_vintage,
 )
+from loaders.table_cache import (
+    TABLE_CACHE_ENV,
+    TABLE_CACHE_SCHEMA_VERSION,
+    LoaderWarning,
+    clear_table_memo,
+    show_loader_warnings_once,
+)
 from loaders.tables import (
     SPECIAL_PROGRAMS,
     apply_student_frl_estimate,
@@ -48,13 +55,17 @@ __all__ = [
     "DataScenario",
     "GEOGRAPHY_COLUMNS",
     "GEOGRAPHY_UNITS",
+    "LoaderWarning",
     "ResolvedSource",
     "SPECIAL_PROGRAMS",
+    "TABLE_CACHE_ENV",
+    "TABLE_CACHE_SCHEMA_VERSION",
     "anchor_data_config",
     "apply_capacity_scenario",
     "apply_student_frl_estimate",
     "apply_block_edge_overrides",
     "census_ids",
+    "clear_table_memo",
     "filter_outside_district_students",
     "identity_fingerprint",
     "in_geoid_set",
@@ -78,4 +89,5 @@ __all__ = [
     "require_geography_vintage",
     "school_id_aliases",
     "selected_geography_vintage",
+    "show_loader_warnings_once",
 ]

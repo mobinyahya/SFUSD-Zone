@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from loaders.config import DataScenario, ResolvedSource
+from loaders.table_cache import TableKey, cached_table
 from loaders.tables import read_csv
 
 GEOGRAPHY_UNITS = ("Block", "BlockGroup", "Tract")
@@ -54,6 +55,29 @@ def _geography_role(
     if group == "optimization" and suffix == "crosswalk":
         return "optimization.crosswalk"
     return f"{group}.geography.{suffix}"
+
+
+class _BlankGeoids(ValueError):
+    """Raised by ``_normalize_geoid_int64`` for the caller to word."""
+
+
+def _normalize_geoid_int64(
+    values: pd.Series, *, length: int, label: str
+) -> pd.Series:
+    """``_normalize_geoid(...).astype("int64")``, failing on blank IDs.
+
+    A numpy-integer column skips the string round trip, which for valid IDs
+    (non-negative, at most ``length`` digits) is the identity; any other
+    column, and any invalid ID, takes the string path and its errors.
+    """
+    if values.dtype.kind in "iu":
+        array = values.to_numpy()
+        if not len(array) or (array.min() >= 0 and array.max() < 10**length):
+            return values.astype("int64")
+    normalized = _normalize_geoid(values, length=length, label=label)
+    if normalized.isna().any():
+        raise _BlankGeoids(label)
+    return normalized.astype("int64")
 
 
 def _normalize_geoid(values: pd.Series, *, length: int, label: str) -> pd.Series:
@@ -105,9 +129,27 @@ def load_geography_crosswalk(
     group: str,
     vintage: str | None = None,
 ) -> pd.DataFrame:
-    """Load and validate a Block-to-parent crosswalk, by default the selected one."""
+    """Load and validate a Block-to-parent crosswalk, by default the selected one.
+
+    Cached by source contents (``loaders.table_cache``); every call returns a
+    new frame the caller may modify.
+    """
     vintage = vintage or selected_geography_vintage(scenario, group)
     role = _geography_role(scenario, group, "crosswalk", vintage)
+    key = TableKey(
+        artifact="loader_geography_crosswalk",
+        roles=frozenset({role}),
+        filters=frozenset({(group, "geography_vintage")}),
+        parameters={"group": group, "vintage": vintage},
+    )
+    return cached_table(
+        scenario, key, lambda: _build_geography_crosswalk(scenario, role, vintage)
+    )
+
+
+def _build_geography_crosswalk(
+    scenario: DataScenario, role: str, vintage: str
+) -> pd.DataFrame:
     crosswalk = read_csv(scenario, role, low_memory=False)
     required = set(GEOGRAPHY_UNITS)
     missing = required - set(crosswalk.columns)
@@ -119,12 +161,14 @@ def load_geography_crosswalk(
     result = crosswalk[list(GEOGRAPHY_UNITS)].copy()
     lengths = {"Block": 15, "BlockGroup": 12, "Tract": 11}
     for unit, length in lengths.items():
-        normalized = _normalize_geoid(
-            result[unit], length=length, label=f"Census crosswalk {unit}"
-        )
-        if normalized.isna().any():
-            raise ValueError(f"Census crosswalk contains blank {unit} GEOIDs.")
-        result[unit] = normalized.astype("int64")
+        try:
+            result[unit] = _normalize_geoid_int64(
+                result[unit], length=length, label=f"Census crosswalk {unit}"
+            )
+        except _BlankGeoids:
+            raise ValueError(
+                f"Census crosswalk contains blank {unit} GEOIDs."
+            ) from None
 
     result = result.drop_duplicates().copy()
     duplicates = result.loc[result["Block"].duplicated(False), "Block"].unique()
@@ -178,12 +222,36 @@ def load_census_geometry(
 ) -> gpd.GeoDataFrame:
     """Load one official Census layer, deriving legacy parents when necessary.
 
-    ``vintage`` defaults to the group's selected vintage.
+    ``vintage`` defaults to the group's selected vintage. Cached by source
+    contents (``loaders.table_cache``); every call returns a new frame the
+    caller may modify.
     """
     if unit not in GEOGRAPHY_UNITS:
         raise ValueError(f"Unsupported census unit {unit!r}.")
     vintage = vintage or selected_geography_vintage(scenario, group)
     role = _geography_role(scenario, group, GEOMETRY_ROLE_KEYS[unit], vintage)
+    key = TableKey(
+        artifact="loader_census_geometry",
+        roles=frozenset(
+            {
+                role,
+                _geography_role(scenario, group, GEOMETRY_ROLE_KEYS["Block"], vintage),
+                _geography_role(scenario, group, "crosswalk", vintage),
+            }
+        ),
+        filters=frozenset({(group, "geography_vintage")}),
+        parameters={"group": group, "unit": unit, "vintage": vintage},
+    )
+    return cached_table(
+        scenario,
+        key,
+        lambda: _build_census_geometry(scenario, group, unit, vintage, role),
+    )
+
+
+def _build_census_geometry(
+    scenario: DataScenario, group: str, unit: str, vintage: str, role: str
+) -> gpd.GeoDataFrame:
     try:
         source = scenario.source(role)
     except KeyError:
@@ -199,13 +267,14 @@ def load_census_geometry(
     _validate_geometry(geometry, source_label=source_label)
     geoid_column = _geoid_column(geometry, vintage)
     length = {"Block": 15, "BlockGroup": 12, "Tract": 11}[unit]
-    geoids = _normalize_geoid(
-        geometry[geoid_column], length=length, label=f"Census {vintage} {unit}"
-    )
-    if geoids.isna().any():
-        raise ValueError(f"{source_label} contains blank GEOIDs.")
+    try:
+        geoids = _normalize_geoid_int64(
+            geometry[geoid_column], length=length, label=f"Census {vintage} {unit}"
+        )
+    except _BlankGeoids:
+        raise ValueError(f"{source_label} contains blank GEOIDs.") from None
     result = geometry[["geometry"]].copy()
-    result[unit] = geoids.astype("int64")
+    result[unit] = geoids
     if result[unit].duplicated().any():
         duplicates = result.loc[result[unit].duplicated(False), unit].head(5).tolist()
         raise ValueError(f"{source_label} contains duplicate GEOIDs: {duplicates}.")

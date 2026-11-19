@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 import re
-import warnings
 from collections.abc import Mapping
 from typing import Any
 
@@ -17,6 +16,7 @@ from loaders.config import (
     DataScenario,
     ResolvedSource,
 )
+from loaders.table_cache import TableKey, cached_table, loader_warn
 
 _SCHOOL_ROUND = re.compile(r"r(\d+)_ranked_idschool")
 _PROGRAM_ROUND = re.compile(r"r(\d+)_programs")
@@ -77,6 +77,13 @@ _FRL_COUNT_COLUMNS = ("Not FRL", "FRLunch", "Students")
 def _missing(value: Any) -> bool:
     if value is None:
         return True
+    # Fast paths with ``pd.isna``'s answers for the scalars that dominate the
+    # student tables: a string or an integer is never missing, and a float is
+    # missing exactly when it is NaN.
+    if isinstance(value, str | int):
+        return False
+    if isinstance(value, float):
+        return value != value
     try:
         result = pd.isna(value)
     except (TypeError, ValueError):
@@ -104,6 +111,49 @@ def normalize_grade(value: Any) -> str:
     return text
 
 
+#: Tokens of a flat list literal that :func:`_simple_literal_list` converts
+#: itself, each exactly as ``ast.literal_eval`` reads it: a decimal integer
+#: (no leading zeros, which Python rejects), a decimal float, and a quoted
+#: string free of quotes, backslashes, newlines, and NUL. Anything else -- and
+#: any cell whose commas might sit inside a string -- falls back to
+#: ``ast.literal_eval``.
+_LITERAL_INT = re.compile(r"-?(?:0|[1-9][0-9]*)")
+_LITERAL_FLOAT = re.compile(
+    r"-?(?:(?:[0-9]+\.[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+)"
+)
+_LITERAL_STRING = re.compile(r"'[^'\"\\\r\n\x00]*'|\"[^'\"\\\r\n\x00]*\"")
+
+
+def _simple_literal_list(value: str) -> list[Any] | None:
+    """Parse ``[a, b, ...]`` of plain scalars, or ``None`` to defer to ``ast``.
+
+    The result equals ``ast.literal_eval(value)`` whenever it is not ``None``;
+    it only covers the cells the cleaned tables hold, ten times faster.
+    """
+    if len(value) < 2 or value[0] != "[" or value[-1] != "]":
+        return None
+    inner = value[1:-1]
+    if not inner.strip(" \t"):
+        return []
+    parsed: list[Any] = []
+    for token in inner.split(","):
+        token = token.strip(" \t")
+        if not token:
+            return None
+        first = token[0]
+        if first == "'" or first == '"':
+            if not _LITERAL_STRING.fullmatch(token):
+                return None
+            parsed.append(token[1:-1])
+        elif _LITERAL_INT.fullmatch(token):
+            parsed.append(int(token))
+        elif _LITERAL_FLOAT.fullmatch(token):
+            parsed.append(float(token))
+        else:
+            return None
+    return parsed
+
+
 def _literal_list(value: Any, label: str) -> list[Any]:
     if isinstance(value, list | tuple | np.ndarray):
         return list(value)
@@ -111,6 +161,9 @@ def _literal_list(value: Any, label: str) -> list[Any]:
         return []
     if not isinstance(value, str):
         raise ValueError(f"Expected {label} to contain a list, got {value!r}.")
+    simple = _simple_literal_list(value)
+    if simple is not None:
+        return simple
     try:
         parsed = ast.literal_eval(value)
     except (SyntaxError, ValueError) as exc:
@@ -353,6 +406,48 @@ def _validate_student_identities(frame: pd.DataFrame) -> None:
         )
 
 
+def _table_key(
+    scenario: DataScenario,
+    artifact: str,
+    role: str,
+    group: str,
+    read_csv_kwargs: Mapping[str, Any],
+) -> TableKey:
+    """Cache identity of one normalised table (see ``loaders.table_cache``).
+
+    The roles are every one the table's build may resolve: the table itself
+    and its catalog, the group's capacity overlay, FRL estimate, school table
+    (programs take school locations, students the attendance-area fill's
+    school points), the attendance-area fill map, and the selected vintage's
+    Census layers and crosswalk. The build may read any of the group's filters.
+    """
+    from loaders.geography import _geography_role
+
+    roles = {
+        role,
+        f"{role}.catalog",
+        f"{group}.capacity",
+        f"{group}.frl_estimate",
+        f"{group}.schools",
+        *(
+            _geography_role(scenario, group, suffix)
+            for suffix in ("blocks", "blockgroups", "tracts", "crosswalk")
+        ),
+    }
+    if group == "assignment":
+        roles.add(ATTENDANCE_AREA_FILL_ROLE)
+    return TableKey(
+        artifact=artifact,
+        roles=frozenset(roles),
+        filters=frozenset({(group, "*")}),
+        parameters={
+            "role": role,
+            "group": group,
+            "read_csv_kwargs": dict(read_csv_kwargs),
+        },
+    )
+
+
 def load_student_records(
     scenario: DataScenario,
     role: str = "optimization.students",
@@ -360,8 +455,25 @@ def load_student_records(
     filter_group: str | None = None,
     **read_csv_kwargs: Any,
 ) -> pd.DataFrame:
-    """Load students and normalize selectors, preferences, and school IDs."""
+    """Load students and normalize selectors, preferences, and school IDs.
+
+    Cached by source contents and selectors (``loaders.table_cache``); every
+    call returns a new frame the caller may modify.
+    """
     group = _filter_group(role, filter_group)
+    return cached_table(
+        scenario,
+        _table_key(scenario, "loader_students", role, group, read_csv_kwargs),
+        lambda: _build_student_records(scenario, role, group, read_csv_kwargs),
+    )
+
+
+def _build_student_records(
+    scenario: DataScenario,
+    role: str,
+    group: str,
+    read_csv_kwargs: Mapping[str, Any],
+) -> pd.DataFrame:
     frame = read_csv(scenario, role, **read_csv_kwargs)
     frame = normalize_student_records(frame, scenario, group)
     from loaders.geography import normalize_census_geography
@@ -462,7 +574,7 @@ def fill_attendance_areas(frame: pd.DataFrame, scenario: DataScenario) -> pd.Dat
     frame.loc[filled.index, "idschoolattendance"] = filled.astype(float)
     frame.loc[filled.index, "attendance_area_source"] = "map"
     unplaced = int((~known).sum()) - len(filled)
-    warnings.warn(
+    loader_warn(
         f"Filled {len(filled)} blank attendance areas from the attendance-area "
         f"map; {unplaced} remain blank.",
         stacklevel=2,
@@ -624,7 +736,7 @@ def normalize_student_records(
     # enrollee look like a student with no enrolled school.
     enrolled = _enrolled_mask(frame, scenario, group)
     if enrolled is not None and not enrolled.all():
-        warnings.warn(
+        loader_warn(
             f"{int((~enrolled).sum())} of {len(frame)} students in the enrolled "
             "population have no enrolled school (blank or "
             f"{NOT_ENROLLED_SCHOOL_ID}) and are excluded as not enrolled.",
@@ -668,7 +780,11 @@ def normalize_student_records(
     special_mode = scenario.filter(group, "special_programs")
     proxies = _planned_demand_proxies(scenario, group)
     proxied = 0
-    any_special = pd.Series(False, index=frame.index)
+    any_special = np.zeros(len(frame), dtype=bool)
+    # Column-wise rather than ``iterrows``: the cells are the same objects, and
+    # each distinct cell text is parsed once (see ``_memoized_parser``).
+    parse_schools = _memoized_parser(parse_ranked_schools)
+    parse_programs = _memoized_parser(parse_ranked_programs)
     for round_number in rounds:
         school_column = f"r{round_number}_ranked_idschool"
         program_column = f"r{round_number}_programs"
@@ -682,13 +798,26 @@ def normalize_student_records(
         parsed_aligned: dict[str, list[list[Any]]] = {
             column: [] for column in aligned_columns
         }
-        for index, row in frame.iterrows():
-            identity = row.get("studentno", index)
+        aligned_parsers = {
+            column: _memoized_parser(
+                lambda value, column=column: _literal_list(value, column)
+            )
+            for column in aligned_columns
+        }
+        aligned_cells = {column: frame[column].tolist() for column in aligned_columns}
+        for position, (identity, school_cell, program_cell) in enumerate(
+            zip(
+                frame["studentno"].tolist(),
+                frame[school_column].tolist(),
+                frame[program_column].tolist(),
+                strict=True,
+            )
+        ):
             try:
-                schools = parse_ranked_schools(row[school_column])
-                programs = parse_ranked_programs(row[program_column])
+                schools = parse_schools(school_cell)
+                programs = parse_programs(program_cell)
                 aligned = {
-                    column: _literal_list(row[column], column)
+                    column: aligned_parsers[column](aligned_cells[column][position])
                     for column in aligned_columns
                 }
             except ValueError as exc:
@@ -715,7 +844,7 @@ def normalize_student_records(
                 if program in SPECIAL_PROGRAMS
             }
             if special_positions:
-                any_special.at[index] = True
+                any_special[position] = True
             keep_positions = list(range(len(schools)))
             if not include_mission_bay:
                 keep_positions = [
@@ -761,7 +890,7 @@ def normalize_student_records(
             frame[column] = pd.Series(values, index=frame.index, dtype=object)
 
     if proxies:
-        warnings.warn(
+        loader_warn(
             f"Planned-school demand proxy added {proxied} preference entries "
             f"(schools {sorted({school for school, _, _ in proxies})}).",
             stacklevel=2,
@@ -773,10 +902,11 @@ def normalize_student_records(
         if column not in frame.columns:
             continue
         parsed_values: list[list[int]] = []
-        for index, value in frame[column].items():
-            identity = frame.at[index, "studentno"]
+        for identity, value in zip(
+            frame["studentno"].tolist(), frame[column].tolist(), strict=True
+        ):
             try:
-                schools = parse_ranked_schools(value)
+                schools = parse_schools(value)
             except ValueError as exc:
                 raise ValueError(
                     f"Invalid {column} schools for student {identity}: {exc}"
@@ -796,10 +926,11 @@ def normalize_student_records(
         if column not in frame.columns:
             continue
         parsed_program_values: list[list[str]] = []
-        for index, value in frame[column].items():
-            identity = frame.at[index, "studentno"]
+        for identity, value in zip(
+            frame["studentno"].tolist(), frame[column].tolist(), strict=True
+        ):
             try:
-                programs = parse_ranked_programs(value)
+                programs = parse_programs(value)
             except ValueError as exc:
                 raise ValueError(
                     f"Invalid {column} programs for student {identity}: {exc}"
@@ -855,7 +986,7 @@ def normalize_student_records(
         # program anywhere in the transfer, which the conversion report counts
         # under market_KG_students_with_no_list. Dropping them silently would
         # quietly shrink the population a metric is computed over, so say so.
-        warnings.warn(
+        loader_warn(
             f"{dropped} of {dropped + len(frame)} students in the "
             f"{scenario.filter(group, 'student_population')} population rank no "
             f"school in round(s) {sorted(rounds)} and are excluded from this "
@@ -865,11 +996,14 @@ def normalize_student_records(
 
     first_rounds: list[int] = []
     first_ordinals: list[int] = []
-    for _, row in frame.iterrows():
+    ranked_by_round = [
+        frame[f"r{round_number}_ranked_idschool"].tolist() for round_number in rounds
+    ]
+    for position in range(len(frame)):
         ordinal = next(
             index
-            for index, round_number in enumerate(rounds)
-            if row[f"r{round_number}_ranked_idschool"]
+            for index, ranked in enumerate(ranked_by_round)
+            if ranked[position]
         )
         first_rounds.append(rounds[ordinal])
         first_ordinals.append(ordinal)
@@ -888,10 +1022,11 @@ def normalize_student_records(
             f"r{round_number}_{suffix}" in frame.columns for round_number in rounds
         ):
             continue
+        cells = _round_cells(frame, rounds, suffix)
         frame[selected_column] = pd.Series(
             [
-                row.get(f"r{round_number}_{suffix}", [])
-                for (_, row), round_number in zip(frame.iterrows(), first_rounds)
+                cells[round_number][position] if round_number in cells else []
+                for position, round_number in enumerate(first_rounds)
             ],
             index=frame.index,
             dtype=object,
@@ -900,14 +1035,50 @@ def normalize_student_records(
         f"r{round_number}_designation_randomnumber" in frame.columns
         for round_number in rounds
     ):
+        cells = _round_cells(frame, rounds, "designation_randomnumber")
         frame["selected_designation_randomnumber"] = [
-            row.get(f"r{round_number}_designation_randomnumber", pd.NA)
-            for (_, row), round_number in zip(frame.iterrows(), first_rounds)
+            cells[round_number][position] if round_number in cells else pd.NA
+            for position, round_number in enumerate(first_rounds)
         ]
 
     frame = frame.reset_index(drop=True)
     _set_source_attrs(frame, source_rows, source_row_count)
     return frame
+
+
+def _memoized_parser(parse):
+    """Wrap a cell parser so each distinct cell string is parsed once.
+
+    Every call returns a new list, as the wrapped parser does; a parse error is
+    raised again for every cell holding the failing text.
+    """
+    parsed: dict[str, tuple[Any, ...]] = {}
+
+    def run(value: Any) -> list[Any]:
+        if not isinstance(value, str):
+            return parse(value)
+        result = parsed.get(value)
+        if result is None:
+            result = parsed[value] = tuple(parse(value))
+        return list(result)
+
+    return run
+
+
+def _round_cells(
+    frame: pd.DataFrame, rounds: list[int], suffix: str
+) -> dict[int, list[Any]]:
+    """``{round: column cells}`` for the selected rounds holding ``r<n>_<suffix>``.
+
+    The cells are the objects ``DataFrame.iterrows`` would hand out for the
+    row: a column's ``tolist()`` converts each numpy scalar to its Python
+    equivalent exactly as the row's object-dtype interleave does.
+    """
+    return {
+        round_number: frame[f"r{round_number}_{suffix}"].tolist()
+        for round_number in rounds
+        if f"r{round_number}_{suffix}" in frame.columns
+    }
 
 
 def _safe_school_identity(value: Any) -> int | None:
@@ -1371,7 +1542,7 @@ def apply_capacity_scenario(
         - selected_schools
     )
     if unplaced:
-        warnings.warn(
+        loader_warn(
             f"Capacity scenario {scenario_name!r} gives seats to schools {unplaced}, "
             "which have no selected program; their seats are not modelled.",
             stacklevel=2,
@@ -1565,8 +1736,25 @@ def load_program_records(
     filter_group: str | None = None,
     **read_csv_kwargs: Any,
 ) -> pd.DataFrame:
-    """Load programs selected by grade, special mode, and Mission Bay policy."""
+    """Load programs selected by grade, special mode, and Mission Bay policy.
+
+    Cached by source contents and selectors (``loaders.table_cache``); every
+    call returns a new frame the caller may modify.
+    """
     group = _filter_group(role, filter_group)
+    return cached_table(
+        scenario,
+        _table_key(scenario, "loader_programs", role, group, read_csv_kwargs),
+        lambda: _build_program_records(scenario, role, group, read_csv_kwargs),
+    )
+
+
+def _build_program_records(
+    scenario: DataScenario,
+    role: str,
+    group: str,
+    read_csv_kwargs: Mapping[str, Any],
+) -> pd.DataFrame:
     frame = _load_school_keyed_records(scenario, role, group, **read_csv_kwargs)
     frame = _filter_program_records(frame, scenario, group, "Program capacity data")
     catalog_role = f"{role}.catalog"
@@ -1652,8 +1840,25 @@ def load_school_records(
     filter_group: str | None = None,
     **read_csv_kwargs: Any,
 ) -> pd.DataFrame:
-    """Load schools with central aliases and deterministic collision handling."""
+    """Load schools with central aliases and deterministic collision handling.
+
+    Cached by source contents and selectors (``loaders.table_cache``); every
+    call returns a new frame the caller may modify.
+    """
     group = _filter_group(role, filter_group)
+    return cached_table(
+        scenario,
+        _table_key(scenario, "loader_schools", role, group, read_csv_kwargs),
+        lambda: _build_school_records(scenario, role, group, read_csv_kwargs),
+    )
+
+
+def _build_school_records(
+    scenario: DataScenario,
+    role: str,
+    group: str,
+    read_csv_kwargs: Mapping[str, Any],
+) -> pd.DataFrame:
     frame = _load_school_keyed_records(scenario, role, group, **read_csv_kwargs)
     planned = _planned_school_rows(scenario, group, frame)
     frame = pd.concat([frame, planned], ignore_index=True) if len(planned) else frame
