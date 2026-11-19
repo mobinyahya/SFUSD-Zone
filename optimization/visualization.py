@@ -8,6 +8,7 @@ namespace and rendered PNGs are written to the optimization output directory.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -15,9 +16,6 @@ from types import MappingProxyType
 from typing import Any
 
 import geopandas as gpd
-import matplotlib.colors as mcolors
-import matplotlib.patches as mpatches
-import matplotlib.pyplot as plt
 import pandas as pd
 
 from Config.Constants import zone_colors
@@ -35,6 +33,13 @@ from optimization.solution import ZoneSolution
 GeometryLoader = Callable[[str], gpd.GeoDataFrame]
 VISUALIZATION_GEOMETRY_CACHE_SCHEMA_VERSION = 4
 GEOMETRY_PAYLOAD = "geometry.pkl"
+
+# Loaded node geometry by cache payload path, which content-addresses the graph
+# membership and census sources. Spatial metrics and the map of one run read
+# the same artifact; each caller still gets a copy. The file's stat signature,
+# taken when it was read or written, catches a file changed since.
+_GEOMETRY_MEMO: OrderedDict[Path, tuple[tuple, gpd.GeoDataFrame]] = OrderedDict()
+_GEOMETRY_MEMO_SIZE = 4
 
 
 @dataclass
@@ -104,11 +109,22 @@ class VisualizationArtifactStore:
             roles=census_geometry_roles(self.data, level.unit),
         )
         path = namespace.payload_path(GEOMETRY_PAYLOAD)
+        memo_key = Path(path)
+        memo = _GEOMETRY_MEMO.get(memo_key)
+        if memo is not None and memo[0] == _stat_signature(memo_key):
+            _GEOMETRY_MEMO.move_to_end(memo_key)
+            return memo[1].copy(), path
 
         geometry = namespace.load_pickle(GEOMETRY_PAYLOAD)
         if not _valid_cached_geometry(geometry):
             geometry = self._build_geometry(level, G)
             path = namespace.save_pickle(GEOMETRY_PAYLOAD, geometry)
+        signature = _stat_signature(memo_key)
+        if signature is not None:
+            _GEOMETRY_MEMO[memo_key] = (signature, geometry)
+            _GEOMETRY_MEMO.move_to_end(memo_key)
+        while len(_GEOMETRY_MEMO) > _GEOMETRY_MEMO_SIZE:
+            _GEOMETRY_MEMO.popitem(last=False)
 
         return geometry.copy(), path
 
@@ -145,6 +161,14 @@ class VisualizationArtifactStore:
         dissolved = geo.dissolve(by="node", as_index=False)[["node", "geometry"]]
         dissolved = dissolved.to_crs(OUTPUT_LATLON_CRS)
         return dissolved
+
+
+def _stat_signature(path: Path) -> tuple | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_ino, stat.st_size, stat.st_mtime_ns)
 
 
 def _valid_cached_geometry(value: Any) -> bool:
@@ -220,6 +244,8 @@ def visualize_solutions(
         result.geometry_artifact = geometry_path
         fig = render_solution_map(solution, geometry, stage)
         result.figure_paths = [_save_figure(fig, output_path, stage)]
+        import matplotlib.pyplot as plt
+
         plt.close(fig)
 
         results.append(result)
@@ -238,6 +264,9 @@ def render_solution_map(
     assigned["zone_id"] = assigned["zone_id"].astype(int)
     if assigned.empty:
         raise ValueError(f"No geometries matched solution assignments for {stage}.")
+
+    # Imported on first render: metrics import this module for its geometry.
+    import matplotlib.pyplot as plt
 
     fig, map_ax = plt.subplots(figsize=(10, 10))
 
@@ -282,6 +311,9 @@ def _zone_color_map(zones) -> dict[int, str]:
             missing.append(zone)
 
     if missing:
+        import matplotlib.colors as mcolors
+        import matplotlib.pyplot as plt
+
         cmap = plt.get_cmap("tab20", max(len(missing), 1))
         for idx, zone in enumerate(missing):
             colors[zone] = mcolors.to_hex(cmap(idx))
@@ -378,6 +410,8 @@ def _format_map_axis(ax, solution: ZoneSolution, stage: str) -> None:
 def _add_zone_legend(ax, colors: dict[int, str]) -> None:
     if len(colors) > 20:
         return
+    import matplotlib.patches as mpatches
+
     handles = [
         mpatches.Patch(color=colors[zone], label=f"Zone {zone}")
         for zone in sorted(colors)

@@ -753,3 +753,34 @@ def test_unreported_ethnicities_reach_the_area_table(tmp_path, scenario_factory)
     assert by_block.loc[1002, "Ethnicity_Missing"] == 1.0
     assert by_block["Ethnicity_Decline_To_State"].sum() == 0.0
     assert by_block["Ethnicity_Hispanic/Latinx"].sum() == 0.0
+
+
+def test_area_student_stats_are_the_aggregated_student_rows(tmp_path, scenario_factory):
+    cfg = _ingest(
+        _student_scenario(tmp_path, scenario_factory, program_population="All")
+    )
+
+    stats = loaders.load_area_student_stats(cfg)
+    expected = loaders._aggregate_students(loaders.load_students(cfg), cfg)
+    expected["Block"] = expected["Block"].astype(int)
+
+    pd.testing.assert_frame_equal(stats, expected)
+
+
+def test_scenario_records_are_read_once_and_copied(scenario_factory, monkeypatch):
+    scenario = scenario_factory()
+    calls = []
+
+    def fake_loader(data, role, *, filter_group, low_memory):
+        calls.append((role, filter_group, low_memory))
+        return pd.DataFrame({"school_id": [1, 2]})
+
+    monkeypatch.setattr(loaders, "_RECORD_MEMO", type(loaders._RECORD_MEMO)())
+    first = loaders._scenario_records(fake_loader, scenario, loaders.SCHOOL_ROLE)
+    first.loc[0, "school_id"] = 99
+    second = loaders._scenario_records(fake_loader, scenario, loaders.SCHOOL_ROLE)
+
+    assert calls == [(loaders.SCHOOL_ROLE, "optimization", False)]
+    assert second["school_id"].tolist() == [1, 2]
+    loaders._scenario_records(fake_loader, scenario, loaders.PROGRAM_ROLE)
+    assert len(calls) == 2
