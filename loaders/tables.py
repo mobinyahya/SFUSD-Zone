@@ -1001,9 +1001,7 @@ def normalize_student_records(
     ]
     for position in range(len(frame)):
         ordinal = next(
-            index
-            for index, ranked in enumerate(ranked_by_round)
-            if ranked[position]
+            index for index, ranked in enumerate(ranked_by_round) if ranked[position]
         )
         first_rounds.append(rounds[ordinal])
         first_ordinals.append(ordinal)
@@ -1573,16 +1571,27 @@ def apply_capacity_scenario(
             )
     overrides = pd.DataFrame(resolved_rows)
 
+    def key_tuples(frame: pd.DataFrame) -> list[tuple[Any, ...]]:
+        # The cells ``iterrows`` would give: ``tolist`` converts numpy scalars
+        # to Python ones exactly as the row's object interleave does.
+        if frame.empty:
+            return []
+        return list(zip(*(frame[key].tolist() for key in keys)))
+
+    override_keys = key_tuples(overrides)
+    result_keys = key_tuples(result)
+
     def matched(column: str) -> pd.Series:
-        by_key = {
-            tuple(row[key] for key in keys): float(row[column])
-            for _, row in overrides.iterrows()
-        }
+        by_key = (
+            {
+                key: float(value)
+                for key, value in zip(override_keys, overrides[column].tolist())
+            }
+            if override_keys
+            else {}
+        )
         return pd.Series(
-            [
-                by_key.get(tuple(row[key] for key in keys), np.nan)
-                for _, row in result.iterrows()
-            ],
+            [by_key.get(key, np.nan) for key in result_keys],
             index=result.index,
             dtype=float,
         )

@@ -327,8 +327,26 @@ def _note_outer(roles: Iterable[str], filters: Iterable[tuple[str, str]]) -> Non
         recorder.filters.update(filters)
 
 
-def _restore(payload: bytes) -> Any:
-    entry = pickle.loads(payload)
+def _unpack(payload: bytes | None) -> dict[str, Any] | None:
+    """A fresh copy of a pickled entry, or ``None`` if it cannot be read."""
+    if payload is None:
+        return None
+    try:
+        entry = pickle.loads(payload)
+        if not isinstance(entry, dict) or not {
+            "value",
+            "warnings",
+            "roles",
+            "filters",
+        } <= set(entry):
+            return None
+        return entry
+    except Exception:  # noqa: BLE001 - a corrupt entry is a miss
+        return None
+
+
+def _replay(entry: Mapping[str, Any]) -> Any:
+    """Return an entry's value as its build would: inputs noted, warnings shown."""
     _note_outer(entry["roles"], (tuple(item) for item in entry["filters"]))
     for message in entry["warnings"]:
         loader_warn(message, stacklevel=4)
@@ -362,16 +380,14 @@ def cached_table(
     except Exception:  # noqa: BLE001 - an unkeyable call is simply uncached
         return build()
 
-    payload = _MEMO.get(namespace.key)
-    if payload is None and mode == "disk":
+    entry = _unpack(_MEMO.get(namespace.key))
+    if entry is None and mode == "disk":
         payload = _load(namespace)
-        if payload is not None:
+        entry = _unpack(payload)
+        if entry is not None:
             _MEMO.put(namespace.key, payload)
-    if payload is not None:
-        try:
-            return _restore(payload)
-        except Exception:  # noqa: BLE001 - a corrupt entry is a miss
-            pass
+    if entry is not None:
+        return _replay(entry)
 
     with ExitStack() as stack:
         locked = False
@@ -384,14 +400,10 @@ def cached_table(
             if locked:
                 # Another process may have built it while this one waited.
                 payload = _load(namespace)
-                if payload is not None:
-                    try:
-                        value = _restore(payload)
-                    except Exception:  # noqa: BLE001
-                        pass
-                    else:
-                        _MEMO.put(namespace.key, payload)
-                        return value
+                entry = _unpack(payload)
+                if entry is not None:
+                    _MEMO.put(namespace.key, payload)
+                    return _replay(entry)
 
         recorder = _Recorder()
         outer = SCENARIO_ACCESS_RECORDERS.get()

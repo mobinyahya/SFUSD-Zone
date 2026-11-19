@@ -226,9 +226,13 @@ class CacheNamespace:
             ):
                 return None
 
-    def save_pickle(self, name: str, value: Any, *, protocol: int | None = None) -> Path:
+    def save_pickle(
+        self, name: str, value: Any, *, protocol: int | None = None
+    ) -> Path:
         """Atomically save a pickle payload and update the namespace manifest."""
-        return self._save_payload(name, pickle.dumps(value, protocol=protocol), "pickle")
+        return self._save_payload(
+            name, pickle.dumps(value, protocol=protocol), "pickle"
+        )
 
     def load_pickle_bytes(self, name: str) -> bytes | None:
         """Return a validated pickle payload's raw bytes, or ``None`` on a miss.

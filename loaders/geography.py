@@ -61,9 +61,7 @@ class _BlankGeoids(ValueError):
     """Raised by ``_normalize_geoid_int64`` for the caller to word."""
 
 
-def _normalize_geoid_int64(
-    values: pd.Series, *, length: int, label: str
-) -> pd.Series:
+def _normalize_geoid_int64(values: pd.Series, *, length: int, label: str) -> pd.Series:
     """``_normalize_geoid(...).astype("int64")``, failing on blank IDs.
 
     A numpy-integer column skips the string round trip, which for valid IDs

@@ -104,7 +104,12 @@ def _students() -> pd.DataFrame:
 
     return pd.DataFrame(
         [
-            {"studentno": 1, "grade": "K", "sibling": "[20]", **rounds([20, 30], ["GE", "AF"])},
+            {
+                "studentno": 1,
+                "grade": "K",
+                "sibling": "[20]",
+                **rounds([20, 30], ["GE", "AF"]),
+            },
             {"studentno": 2, "grade": "KG", "sibling": "[]", **rounds([30], ["GE"])},
             # Ranks nothing: dropped with a LoaderWarning.
             {"studentno": 3, "grade": "KG", "sibling": "[]", **rounds([], [])},
@@ -248,9 +253,12 @@ def test_an_inner_table_s_warnings_and_inputs_join_the_outer_entry(synthetic):
         # The inner entry exists before the outer build, so the outer build
         # only sees it replayed.
         cached_table(scenario, inner, build_inner)
-        assert cached_table(
-            scenario, outer, lambda: cached_table(scenario, inner, build_inner) + 1
-        ) == 2
+        assert (
+            cached_table(
+                scenario, outer, lambda: cached_table(scenario, inner, build_inner) + 1
+            )
+            == 2
+        )
     clear_table_memo()
     with warnings.catch_warnings(record=True) as replayed:
         warnings.simplefilter("always")
@@ -599,9 +607,7 @@ def _recorded(load):
 
 @pytest.mark.real_data
 @pytest.mark.parametrize("combo", list(_COMBOS))
-def test_real_tables_are_identical_cold_warm_and_uncached(
-    combo, tmp_path, monkeypatch
-):
+def test_real_tables_are_identical_cold_warm_and_uncached(combo, tmp_path, monkeypatch):
     scenario = _real_scenario(tmp_path / "cache", _COMBOS[combo])
     loads = dict(_REAL_LOADS)
     if combo == "applicant":
@@ -616,4 +622,19 @@ def test_real_tables_are_identical_cold_warm_and_uncached(
         disk, disk_warnings = _recorded(lambda: load(scenario))
         for frame in (cold, memo, disk):
             assert_identical(frame, expected)
-        assert cold_warnings == memo_warnings == disk_warnings == expected_warnings, name
+        assert cold_warnings == memo_warnings == disk_warnings == expected_warnings, (
+            name
+        )
+
+
+def test_an_error_filter_raises_a_replayed_warning_like_a_live_one(synthetic):
+    _, scenario = synthetic
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        _load(scenario)
+    for _ in range(2):  # from the memo, then from disk
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", LoaderWarning)
+            with pytest.raises(LoaderWarning, match="rank no school"):
+                _load(scenario)
+        clear_table_memo()
