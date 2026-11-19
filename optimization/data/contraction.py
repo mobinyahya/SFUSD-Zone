@@ -43,6 +43,21 @@ original problem's zonings with fixed nodes held:
 A free or held-out node keeps its id and a group takes its smallest member's,
 so reduced ids are a subset of the original ones (not ``0..A'-1``).
 
+The same holds for the Gurobi MIP (``optimization/solvers/mip.py``), which
+reads the same rows: both solvers keep only *monotone* supports
+(:func:`optimization.data.contiguity.contiguity_supports`: a support that is
+the centroid or has closer supports of its own) and forbid a pair with none.
+A kept member has a support in its fixed component, so it is monotone itself;
+the group it lands in is too, because the group's member nearest the school
+is supported only by held-out nodes. A fixed node with no closer support at
+all is held out and stays forbidden, so an infeasible original stays
+infeasible. Rooted-flow contiguity (``contiguity_model: flow``) only asks
+each zone to be connected, which contracting connected same-zone groups
+preserves. Balance, school-count, resident-floor and capacity-reference
+rows read summed attributes, edge costs read summed weights, and a hint
+(Gurobi's partial start included) is mapped node for node, the groups
+taking their zone.
+
 The transform is in-memory only: no geometry, no cache, one pass over nodes
 and edges. CP-SAT's integer rounding of a summed coefficient is never
 stricter than the rounding of its parts, and expansions are checked with

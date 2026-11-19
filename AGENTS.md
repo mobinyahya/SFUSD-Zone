@@ -266,7 +266,7 @@ Aggregation produces `summary.csv` with one row per run and `stages.csv` with on
 | `frl_reference_dev` | `0.10` | Steps with a `capacity_reference` only: relative band on each zone's frozen school FRL count; negative disables |
 | `objective_weights` | `{capacity_match: 1, frl_dissimilarity: 10}` | `weighted_sum` terms (ReCom); `frl_dissimilarity` is in percentage points |
 | `seed` | `42` | Solver seed |
-| `contract_fixed` | `true` | CP-SAT refinement steps with fixed nodes solve on a problem with each connected fixed group contracted to one node (`optimization/data/contraction.py`); exact, so `true` keeps task ids |
+| `contract_fixed` | `true` | CP-SAT and MIP refinement steps with fixed nodes solve on a problem with each connected fixed group contracted to one node (`optimization/data/contraction.py`); exact, so `true` keeps task ids |
 
 **Pipeline refinement.** A step's `inputs` project an earlier step onto its
 level. `{mode: assign, select: interior, radius: r}` fixes every block

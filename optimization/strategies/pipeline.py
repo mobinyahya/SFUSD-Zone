@@ -26,7 +26,6 @@ from optimization.levels import LevelSpec
 from optimization.pipeline import step_config
 from optimization.problem import DuplicateCentroidError
 from optimization.solution import ZoneSolution
-from optimization.solvers.cpsat import _assignment_objective
 from optimization.strategies.base import Strategy, register
 
 
@@ -485,8 +484,12 @@ class PipelineStrategy(Strategy):
         return [solution], extra
 
 
-#: Methods whose solve contracts fixed groups: the CP-SAT models.
-CONTRACTED_METHODS = frozenset({"cp_bool", "cp_int"})
+#: Methods whose solve contracts fixed groups: the CP-SAT models and the MIP.
+#: Both write contiguity as the same closer-neighbour support rows (or, for
+#: the MIP's ``contiguity_model: flow``, rooted flow, which contracting
+#: connected same-zone groups also preserves); see
+#: :mod:`optimization.data.contraction`.
+CONTRACTED_METHODS = frozenset({"cp_bool", "cp_int", "mip"})
 #: Objectives the contraction preserves: boundary and distance costs. Market
 #: objectives index their markets by node and are solved unreduced.
 CONTRACTED_OBJECTIVES = frozenset(
@@ -518,7 +521,8 @@ def solve_step_problem(problem, method, objective, options, *, contract=True):
     ``check_zoning`` on the original problem; on failure the original problem
     is solved instead (``contraction_fallback`` in the metadata). The
     objective is recomputed on the original problem, so a distance objective
-    includes the fixed groups' constant cost.
+    includes the fixed groups' constant cost; ``solver_objective`` and the
+    progress entries are shifted by the same constant.
     """
     reason = contraction_skip_reason(problem, method, objective, options)
     if not contract or reason is not None:
@@ -562,8 +566,10 @@ def solve_step_problem(problem, method, objective, options, *, contract=True):
     objective_value = reduced.objective
     progress = list(reduced.solver_progress)
     if reduced.feasible and reduced.objective is not None:
-        objective_value = _assignment_objective(view, assignment)
+        objective_value = view.model_objective(assignment)
         offset = objective_value - reduced.objective
+        if "solver_objective" in metadata:
+            metadata["solver_objective"] += offset
         progress = [
             replace(
                 entry,

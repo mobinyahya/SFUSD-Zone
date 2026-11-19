@@ -176,6 +176,8 @@ class MipSolver(Solver):
                 metadata = {
                     "solver": self.name,
                     "hint_dropped_nodes": getattr(self, "_hint_dropped_nodes", 0),
+                    "mip_variables": int(m.NumVars),
+                    "mip_constraints": int(m.NumConstrs),
                     **self._solver_log_metadata(log_path),
                     **self._solver_progress_metadata(progress),
                 }

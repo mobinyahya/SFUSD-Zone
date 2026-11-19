@@ -115,12 +115,7 @@ def _feasible_hint(problem: ZoneProblem) -> dict[int, int] | None:
 
 def _assignment_objective(problem: ZoneProblem, assignment) -> float:
     """The CP model's objective at ``assignment``, unscaled."""
-    if problem.model_cost != "cut_edges":
-        costs = problem.distance_objective_costs()
-        return float(sum(costs[zone, node] for node, zone in assignment.items()))
-    from optimization.data.edge_weights import boundary_cost
-
-    return float(boundary_cost(problem.G, assignment, weighted=problem.weight_edges))
+    return problem.model_objective(assignment)
 
 
 class _CpSatProgressCallback(cp_model.CpSolverSolutionCallback):

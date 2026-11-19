@@ -250,7 +250,7 @@ class OptimizationConfig:
     # (the default) uses the radius of the step's interior hard input, i.e.
     # ``boundary_radius`` in a recursive run, and 0 without one.
     keep_centroid_radius: int | None = None
-    # Refine steps with fixed nodes: solve CP-SAT on a problem whose connected
+    # Refine steps with fixed nodes: solve CP-SAT or the MIP on a problem whose connected
     # groups of fixed nodes are contracted to one node each
     # (optimization.data.contraction), which admits exactly the same zonings.
     contract_fixed: bool = True

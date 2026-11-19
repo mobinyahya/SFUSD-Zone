@@ -323,3 +323,187 @@ def test_contract_fixed_default_keeps_task_ids():
     assert task_id() != task_id(contract_fixed=False)
     with pytest.raises(ValueError):
         OptimizationConfig(contract_fixed="yes")
+
+
+# --------------------------------------------------------------------------- #
+# The Gurobi MIP
+# --------------------------------------------------------------------------- #
+def _gurobi_licensed() -> bool:
+    try:
+        import gurobipy as gp
+
+        env = gp.Env(empty=True)
+        env.setParam("OutputFlag", 0)
+        env.start()
+        gp.Model(env=env).dispose()
+        env.dispose()
+        return True
+    except Exception:
+        return False
+
+
+requires_gurobi = pytest.mark.skipif(
+    not _gurobi_licensed(), reason="gurobipy is not installed or not licensed"
+)
+
+
+def _mip_admits(problem, assignment, contiguity_model="neighbors") -> bool:
+    """Whether the MIP's rows admit ``assignment`` (every x fixed to it)."""
+    import gurobipy as gp
+    from gurobipy import GRB
+
+    from optimization.solvers.mip import add_gurobi_zoning_geography
+
+    with gp.Env(empty=True) as env:
+        env.setParam("OutputFlag", 0)
+        env.setParam("Threads", 1)
+        env.start()
+        with gp.Model(env=env) as m:
+            x = add_gurobi_zoning_geography(
+                m, problem, contiguity_model=contiguity_model
+            )
+            for (zone, node), var in x.items():
+                var.LB = var.UB = 1.0 if assignment[node] == zone else 0.0
+            if any(assignment[n] not in problem.candidate_zones(n) for n in assignment):
+                return False
+            m.optimize()
+            return m.Status == GRB.OPTIMAL
+
+
+@requires_gurobi
+@pytest.mark.parametrize("contiguity_model", ["neighbors", "flow"])
+def test_mip_rows_admit_exactly_the_expanded_zonings(contiguity_model):
+    problem = _problem(weight_edges=False)
+    c = _contract(problem)
+    view = replace(problem, weight_edges=True)
+    feasible = 0
+    for a in _random_assignments(c.reduced, 60, seed=3):
+        ours = _mip_admits(c.reduced, a, contiguity_model)
+        theirs = _mip_admits(view, c.expand(a), contiguity_model)
+        assert ours == theirs
+        feasible += ours
+    assert feasible > 5
+
+
+def _solve_both(problem, method, objective, **options):
+    options = get_solver(
+        method, solve_time_limit=30, workers=1, seed=1, **options
+    ).options
+
+    def solve(contract):
+        return solve_step_problem(
+            replace(problem, fixed=dict(problem.fixed), hint=dict(problem.hint)),
+            method,
+            objective,
+            options,
+            contract=contract,
+        )
+
+    return solve(True), solve(False)
+
+
+@requires_gurobi
+@pytest.mark.parametrize(
+    "objective,weight_edges",
+    [
+        ("cut_edges", False),
+        ("boundary_perimeter", False),
+        ("school_distance", True),
+        ("average_distance", False),
+    ],
+)
+def test_mip_solve_reaches_the_same_optimum(objective, weight_edges):
+    problem = _problem(weight_edges=weight_edges, objective=objective)
+    on, off = _solve_both(problem, "mip", objective)
+    assert on.status == off.status == "OPTIMAL"
+    assert on.objective == pytest.approx(off.objective, abs=1e-6)
+    assert set(on.assignment) == set(problem.nodes)
+    assert check_zoning(on.problem, on.assignment).feasible
+    assert on.objective == pytest.approx(on.problem.model_objective(on.assignment))
+    assert (
+        on.metadata["contracted_nodes_after"] < on.metadata["contracted_nodes_before"]
+    )
+    assert "contracted_nodes_before" not in off.metadata
+    assert "contraction_skipped" not in on.metadata
+    assert on.metadata["mip_variables"] < off.metadata["mip_variables"]
+    assert on.metadata["mip_constraints"] < off.metadata["mip_constraints"]
+
+
+@requires_gurobi
+def test_mip_flow_contiguity_reaches_the_same_optimum():
+    problem = _problem(weight_edges=False)
+    on, off = _solve_both(problem, "mip", "cut_edges", contiguity_model="flow")
+    assert on.status == off.status == "OPTIMAL"
+    assert on.objective == pytest.approx(off.objective)
+    assert "contracted_nodes_after" in on.metadata
+
+
+@pytest.mark.parametrize(
+    "method", ["cp_bool", pytest.param("mip", marks=requires_gurobi)]
+)
+def test_a_fixed_node_without_support_stays_infeasible(method):
+    # 3 is fixed to zone 2, but both its closer neighbours toward school 35
+    # (4 and 9) are fixed to zone 1: no zoning holds, contracted or not.
+    problem = _problem()
+    problem.fixed = {**problem.fixed, 3: 2, 9: 1}
+    on, off = _solve_both(problem, method, "cut_edges")
+    assert off.status == on.status == "INFEASIBLE"
+
+
+# --------------------------------------------------------------------------- #
+# The reported objective is the zoning's, not the solver's
+# --------------------------------------------------------------------------- #
+def test_reported_objective_is_recomputed_from_the_returned_zoning():
+    from optimization.objectives import solve_objective
+    from optimization.progress import SolverProgressEntry
+    from optimization.solvers.cpsat import CpBoolSolver
+
+    class SlackIndicators(CpBoolSolver):
+        """A solve stopped early: cut indicators left on overstate the cost."""
+
+        def solve(self, problem):
+            solution = super().solve(problem)
+            nodes = tuple(problem.nodes)
+            zones = tuple(solution.assignment[n] for n in nodes)
+            solution.objective += 7.0
+            solution.solver_progress = [
+                SolverProgressEntry(solution.objective + 3.0, 0.1, zones),
+                SolverProgressEntry(solution.objective, 0.2, zones),
+            ]
+            return solution
+
+    problem = _problem(weight_edges=True)
+    solver = SlackIndicators(solve_time_limit=10, workers=1, seed=1)
+    solution = solve_objective(problem, "cp_bool", "cut_edges", solver=solver)
+    true = solution.problem.model_objective(solution.assignment)
+    assert solution.objective == true
+    assert solution.metadata["solver_objective"] == true + 7.0
+    assert [e.objective for e in solution.solver_progress] == [true, true]
+
+
+@pytest.mark.parametrize("contract", [True, False])
+def test_cp_distance_objective_is_unrounded(contract):
+    # CP-SAT rounds distance coefficients to 1/CP_SAT_SCALE; the reported
+    # objective is the exact cost of the zoning, the solver's value is kept.
+    problem = _problem(objective="school_distance")
+    options = get_solver(
+        "cp_bool", solve_time_limit=30, workers=1, seed=1, save_solver_progress=True
+    ).options
+    solution = solve_step_problem(
+        problem, "cp_bool", "school_distance", options, contract=contract
+    )
+    assert solution.status == "OPTIMAL"
+    exact = solution.problem.model_objective(solution.assignment)
+    assert solution.objective == pytest.approx(exact, abs=1e-9)
+    assert solution.metadata["solver_objective"] != solution.objective
+    assert solution.metadata["solver_objective"] == pytest.approx(exact, abs=1.0)
+    assert solution.solver_progress[-1].objective == pytest.approx(exact, abs=1e-9)
+
+
+@requires_gurobi
+def test_mip_reports_the_zoning_objective():
+    problem = _problem(weight_edges=True)
+    options = get_solver("mip", solve_time_limit=30, workers=1, seed=1).options
+    solution = solve_step_problem(problem, "mip", "cut_edges", options)
+    assert solution.objective == solution.problem.model_objective(solution.assignment)
+    assert solution.metadata["solver_objective"] == pytest.approx(solution.objective)
