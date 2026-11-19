@@ -29,6 +29,11 @@ and nodes the relaxation widened (``problem.candidates`` before the call),
 fixed nodes and centroids keep their domains unchanged. A protected pair the
 contiguity rows cannot satisfy is kept anyway (the solver forbids it) and
 counted in ``boundary_domain_unsupported_protected``.
+
+The restriction can make a step infeasible -- the source zoning may break the
+closer-neighbour rows (ReCom zonings do) and the nearby zones alone may leave
+no repair -- so the pipeline re-solves an ``INFEASIBLE`` restricted step with
+its full domains.
 """
 
 from __future__ import annotations

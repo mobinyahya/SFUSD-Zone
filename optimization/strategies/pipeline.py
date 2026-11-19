@@ -468,16 +468,16 @@ class PipelineStrategy(Strategy):
                 {centroid: zone for zone, centroid in enumerate(problem.centroids)}
             )
         problem.hint = hints or None
-        extra.update(
-            restrict_step_domains(
-                problem,
-                hints or assigned,
-                step.method,
-                effective.boundary_domain_hops,
-                step_solver.options,
-                effective.release_paths,
-            )
+        unrestricted = problem.candidates
+        restricted = restrict_step_domains(
+            problem,
+            hints or assigned,
+            step.method,
+            effective.boundary_domain_hops,
+            step_solver.options,
+            effective.release_paths,
         )
+        extra.update(restricted)
         extra.update(
             pipeline_fixed=fixed,
             pipeline_fixed_areas=base_area_assignment(problem.G, fixed),
@@ -488,13 +488,31 @@ class PipelineStrategy(Strategy):
             ),
         )
         self.add_initial_hint(problem, step_solver)
-        solution = solve_step_problem(
-            problem,
-            step.method,
-            step.objective,
-            step_solver.options,
-            contract=effective.contract_fixed,
-        )
+
+        def solve():
+            return solve_step_problem(
+                problem,
+                step.method,
+                step.objective,
+                step_solver.options,
+                contract=effective.contract_fixed,
+            )
+
+        solution = solve()
+        if "boundary_domain_free_nodes" in restricted and solution.status == "INFEASIBLE":
+            # The source zoning breaks the closer-neighbour rows at some
+            # blocks (ReCom zonings do), and the nearby zones alone may leave
+            # no way to repair them. Solve again with the full domains.
+            restricted_time = solution.wall_time
+            problem.candidates = unrestricted
+            solution = solve()
+            solution.metadata.update(
+                boundary_domain_fallback=True,
+                boundary_domain_restricted_wall_time=restricted_time,
+            )
+            extra["pipeline_candidates_areas"] = _base_area_candidates(
+                problem.G, unrestricted or {}
+            )
         return [solution], extra
 
 

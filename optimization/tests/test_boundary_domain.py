@@ -341,6 +341,31 @@ def test_pipeline_restricts_refinement_domains_by_default():
     assert not off[-1].metadata["pipeline_candidates_areas"]
 
 
+def test_an_infeasible_restricted_step_is_solved_with_full_domains(monkeypatch):
+    import optimization.strategies.pipeline as pipeline
+
+    real = pipeline.solve_step_problem
+    seen = []
+
+    def solve(problem, *args, **kwargs):
+        seen.append(dict(problem.candidates or {}))
+        solution = real(problem, *args, **kwargs)
+        if problem.fixed and len(seen) == 2:  # the restricted refinement
+            solution.status = "INFEASIBLE"
+        return solution
+
+    monkeypatch.setattr(pipeline, "solve_step_problem", solve)
+    results = _run(_pipeline_config(boundary_domain_hops=0))
+    refined = results[-1]
+    assert len(seen) == 3
+    assert refined.feasible
+    assert refined.metadata["boundary_domain_fallback"] is True
+    assert "boundary_domain_restricted_wall_time" in refined.metadata
+    # The retry gets the unrestricted candidates, and the stage saves them.
+    assert seen[2] == {}
+    assert not refined.metadata["pipeline_candidates_areas"]
+
+
 def test_saved_stage_rebuilds_the_restricted_domains():
     from optimization.tests.test_pipeline import MemoryDataset
 
