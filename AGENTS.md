@@ -222,7 +222,19 @@ zonings.json.xz          # Every stage: node + area assignment, status, full met
 solver_progress.json.xz  # Only with save_solver_progress: every stage's incumbents
 zoning_config.yaml       # The generating config, runnable by optimization.run as is
 stages/<stage>/          # Only assignment targets (assignment_zones.csv), when matching
+matching/                # Slurm sweeps with matching: this run's raw assignments,
+                         # aggregate_metrics/metrics_*.csv, heatmaps/, matching_complete.json
 ```
+
+On Slurm (`benchmark.slurm`), a matching-enabled sweep is matched inside its
+optimization allocations: each task runs optimize, evaluate, and match, each
+in a fresh process on the task's CPU, into its own `matching/` folder; the
+locked end-of-allocation aggregation rebuilds the sweep's
+`<assignment_dir>/aggregate_metrics/metrics_*.csv` by streaming the runs'
+reports. A plan is at most 12 jobs (`--mem-per-cpu=5G`), with no downstream
+assignment graph; with `skip_existing`, a run optimized but unmatched is
+planned for its matching alone. The local `benchmark.run` path still matches
+the whole sweep at once into `<assignment_dir>/`.
 
 `optimization/run_archive.py` owns the archive: area ids are stored once per
 unit and each stage only its zones, and LZMA's window folds the metadata stages

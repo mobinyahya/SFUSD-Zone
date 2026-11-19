@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections import defaultdict, deque
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from functools import cached_property
@@ -28,6 +28,7 @@ from benchmark.config import (
     json_ready,
     optimization_worker_count,
 )
+from benchmark.assignment import matching_complete, run_task_matching
 from benchmark.results import aggregate_results
 from benchmark.runner import (
     TaskResult,
@@ -40,22 +41,20 @@ from benchmark.runner import (
 
 
 # 4: execution.queue_multiplier removed.
-PLAN_SCHEMA_VERSION = 4
+# 5: matching runs inside the optimization allocations; no assignment plan.
+PLAN_SCHEMA_VERSION = 5
 MAX_CPUS_PER_NODE = 40
-#: CPUs of an allocation each concurrent evaluation task is given. Jobs get
-#: the partition's default 4 GB per CPU, and one evaluation (rebuilding the
-#: dataset, metrics, figures) briefly peaks near 3.2 GB: 25 of them started
-#: together on 25 CPUs OOM-killed attendance_areas_11-06's first job. Two
-#: CPUs (8 GB) per evaluation leaves room for that spike.
-EVALUATION_CPUS_PER_TASK = 2
+#: The partition's per-user job limit. Every job a plan submits is an
+#: optimization allocation: each task is optimized, evaluated, and matched
+#: inside its allocation, so there is no downstream job graph.
 MAX_SLURM_JOBS = 12
-MAX_SUBMITTED_SLURM_JOBS = 20
-MAX_DOWNSTREAM_SLURM_JOBS = MAX_SUBMITTED_SLURM_JOBS - MAX_SLURM_JOBS
-# Assignment, metrics, and the finalizer share the eight pending-job slots.
-MAX_DOWNSTREAM_ASSIGNMENT_JOBS = 4
-MAX_DOWNSTREAM_METRICS_JOBS = (
-    MAX_DOWNSTREAM_SLURM_JOBS - MAX_DOWNSTREAM_ASSIGNMENT_JOBS - 1
-)
+MAX_SUBMITTED_SLURM_JOBS = MAX_SLURM_JOBS
+#: Memory per allocated CPU. Every phase of a task (optimize, evaluate,
+#: match) runs in its own fresh process on the task's CPUs, so a CPU's
+#: memory bounds one phase's peak rather than several stacked.
+SBATCH_MEM_PER_CPU = "5G"
+#: The phases of one task, in order; each runs in its own process.
+TASK_PHASES = ("optimize", "evaluate", "match")
 SLURM_DIRNAME = ".slurm"
 DEFAULT_PLAN_FILENAME = "benchmark-plan.json"
 DEFAULT_SCRIPT_FILENAME = "submit-benchmark.sh"
@@ -90,7 +89,6 @@ class SlurmPlan:
     tasks: list[BenchmarkTask]
     visualization: VisualizationRunConfig = VisualizationRunConfig()
     matching: MatchingRunConfig = MatchingRunConfig()
-    assignment_plan_path: str | None = None
     execution: ExecutionConfig = ExecutionConfig()
     schema_version: int = PLAN_SCHEMA_VERSION
 
@@ -106,7 +104,6 @@ class SlurmPlan:
                 "metrics": asdict(self.metrics),
                 "visualization": asdict(self.visualization),
                 "matching": asdict(self.matching),
-                "assignment_plan_path": self.assignment_plan_path,
                 "execution": asdict(self.execution),
                 "tasks": [asdict(task) for task in self.tasks],
             }
@@ -138,11 +135,6 @@ class SlurmPlan:
             tasks=tasks,
             visualization=VisualizationRunConfig.from_dict(value.get("visualization")),
             matching=MatchingRunConfig.from_dict(value.get("matching")),
-            assignment_plan_path=(
-                str(value["assignment_plan_path"])
-                if value.get("assignment_plan_path")
-                else None
-            ),
             execution=ExecutionConfig.from_dict(value.get("execution")),
         )
         _validate_plan(plan)
@@ -181,39 +173,13 @@ def create_plan(config_path: str) -> SlurmPlan:
     ]
     if not all_tasks:
         raise ValueError("Slurm benchmark plan contains no tasks.")
-    if sweep.execution.skip_existing:
-        tasks = [
-            task
-            for task in all_tasks
-            if not valid_existing_result(task, sweep.execution)
-        ]
-    else:
-        tasks = all_tasks
-    assignment_plan_path = None
-    if sweep.matching.enabled:
-        from assignment.run_custom_config import load_custom_config
-        from assignment.slurm import build_generated_zone_slurm_plan
-        from benchmark.assignment import plan_assignment_targets
-
-        targets = plan_assignment_targets(all_tasks, tasks, sweep.matching)
-
-        assignment_config = load_custom_config(sweep.matching.config)
-        metrics_enabled = bool(assignment_config.get("export-aggregate-metrics", False))
-        assignment_jobs = (
-            MAX_DOWNSTREAM_ASSIGNMENT_JOBS
-            if metrics_enabled
-            else MAX_DOWNSTREAM_SLURM_JOBS
-        )
-        metrics_jobs = MAX_DOWNSTREAM_METRICS_JOBS if metrics_enabled else 0
-        _assignment_plan, generated_plan_path = build_generated_zone_slurm_plan(
-            sweep.matching.config,
-            targets,
-            assignment_folder=output_root / sweep.matching.assignment_dir,
-            plan_dir=output_root / SLURM_DIRNAME / "assignment",
-            max_assignment_jobs=assignment_jobs,
-            max_metrics_jobs=metrics_jobs,
-        )
-        assignment_plan_path = str(generated_plan_path)
+    # A task is planned while any of its phases is left: with skip_existing,
+    # a run optimized but not yet matched is planned for its matching alone.
+    tasks = [
+        task
+        for task in all_tasks
+        if task_phases(task, sweep.execution, sweep.matching)
+    ]
 
     plan = SlurmPlan(
         name=sweep.name,
@@ -225,7 +191,6 @@ def create_plan(config_path: str) -> SlurmPlan:
         tasks=tasks,
         visualization=sweep.visualization,
         matching=sweep.matching,
-        assignment_plan_path=assignment_plan_path,
         execution=sweep.execution,
     )
     _validate_plan(plan)
@@ -267,7 +232,7 @@ def write_submission_script(
 
 
 def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
-    """Render benchmark allocations and the dependent assignment graph."""
+    """Render the plan's benchmark allocations as ``sbatch`` calls."""
 
     _validate_plan(plan)
     job_count = _submission_job_count(plan)
@@ -293,16 +258,7 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
         lines.append(f'{variable}="${{{variable}%%;*}}"')
         lines.append(f'printf "%s\\n" "allocation {index}=${{{variable}}}"')
         lines.append("")
-    if plan.assignment_plan_path:
-        from assignment.slurm import write_slurm_scripts
-
-        assignment_submit = write_slurm_scripts(plan.assignment_plan_path)
-        command = [shlex.quote(str(assignment_submit))]
-        for index in range(len(allocations)):
-            command.extend(["--upstream-job-id", f'"${{benchmark_job_{index}}}"'])
-        lines.append(" ".join(command))
-        lines.append("")
-    elif not allocations:
+    if not allocations:
         lines.append(
             'printf "%s\\n" "All benchmark tasks completed; no jobs to submit."'
         )
@@ -335,45 +291,12 @@ def submit_plan(
                 job_id=job_id,
             )
         )
-    if plan.assignment_plan_path:
-        import json
-
-        from assignment.slurm import submit_slurm_plan, write_slurm_scripts
-
-        assignment_submit = write_slurm_scripts(plan.assignment_plan_path)
-        submission_path = submit_slurm_plan(
-            plan.assignment_plan_path,
-            script_dir=assignment_submit.parent,
-            runner=run,
-            upstream_job_ids=[item.job_id for item in submitted],
-            sbatch=sbatch,
-        )
-        with submission_path.open(encoding="utf-8") as stream:
-            assignment_submission = json.load(stream)
-        offset = len(submitted)
-        from assignment.slurm import load_plan as load_assignment_plan
-
-        assignment_plan, _ = load_assignment_plan(plan.assignment_plan_path)
-        jobs_by_id = {job["id"]: job for job in assignment_plan["jobs"]}
-        submitted.extend(
-            SubmittedAllocation(
-                allocation_index=offset + index,
-                phase=jobs_by_id[item["job_id"]]["kind"],
-                job_id=item["slurm_job_id"],
-            )
-            for index, item in enumerate(assignment_submission["jobs"])
-        )
     return submitted
 
 
 def _submission_job_count(plan: SlurmPlan) -> int:
-    """Count the complete graph, including dependent jobs and finalization."""
+    """Count the jobs a plan submits: its allocations, matching included."""
     count = len(plan.allocations)
-    if plan.assignment_plan_path:
-        from assignment.slurm import load_plan as load_assignment_plan
-
-        assignment_plan, _ = load_assignment_plan(plan.assignment_plan_path)
-        count += len(assignment_plan["jobs"])
     if count > MAX_SUBMITTED_SLURM_JOBS:
         raise ValueError(
             f"Benchmark Slurm plan has {count} jobs, exceeding the "
@@ -408,21 +331,29 @@ def _check_submission_capacity(
         )
 
 
-def _run_optimization_task(
+def task_phases(
     task: BenchmarkTask,
-    execution: ExecutionConfig | None = None,
-) -> TaskResult:
-    if (
-        execution
-        and execution.skip_existing
-        and valid_optimization_result(task, execution)
-    ):
-        return TaskResult(
-            task_id=task.task_id,
-            output_dir=task.output_dir,
-            status="SKIPPED",
-            skipped=True,
-        )
+    execution: ExecutionConfig | None,
+    matching: MatchingRunConfig | None,
+) -> tuple[str, ...]:
+    """The phases of :data:`TASK_PHASES` a task still needs, in order.
+
+    Without ``skip_existing`` every phase runs. With it, a saved optimization
+    is kept; a saved evaluation is kept unless its optimization reruns; and a
+    run's own matching is kept unless its optimization reruns (which clears
+    it) or it was made for another config (:func:`matching_complete`).
+    """
+    skip = bool(execution and execution.skip_existing)
+    optimize = not (skip and valid_optimization_result(task, execution))
+    evaluate = optimize or not (skip and valid_existing_result(task, execution))
+    match = bool(matching and matching.enabled) and (
+        optimize or not (skip and matching_complete(task, matching))
+    )
+    needed = {"optimize": optimize, "evaluate": evaluate, "match": match}
+    return tuple(phase for phase in TASK_PHASES if needed[phase])
+
+
+def _run_optimization_task(task: BenchmarkTask) -> TaskResult:
     return run_optimization_phase(task)
 
 
@@ -432,15 +363,7 @@ def _run_evaluation_task(
     compute_stage_metrics: bool,
     matching: MatchingRunConfig,
     visualization: VisualizationRunConfig,
-    execution: ExecutionConfig | None = None,
 ) -> TaskResult:
-    if execution and execution.skip_existing and valid_existing_result(task, execution):
-        return TaskResult(
-            task_id=task.task_id,
-            output_dir=task.output_dir,
-            status="SKIPPED",
-            skipped=True,
-        )
     return evaluate_optimization_task(
         task,
         strict_metrics=strict_metrics,
@@ -450,19 +373,46 @@ def _run_evaluation_task(
     )
 
 
-def evaluation_workers(allocation: SlurmAllocation) -> int:
-    """Concurrent evaluation tasks: one per ``EVALUATION_CPUS_PER_TASK`` CPUs."""
-    return max(
-        1,
-        min(
-            len(allocation.task_indices),
-            allocation.cpus // EVALUATION_CPUS_PER_TASK,
-        ),
+def _run_matching_task(task: BenchmarkTask, matching: MatchingRunConfig) -> TaskResult:
+    """Match one evaluated task into its own run folder."""
+    skipped = run_task_matching(task, matching) == "skipped"
+    return TaskResult(
+        task_id=task.task_id,
+        output_dir=task.output_dir,
+        status="SKIPPED" if skipped else "COMPLETE",
+        skipped=skipped,
     )
 
 
+def _submit_phase(executor, plan: SlurmPlan, index: int, phase: str):
+    task = _task_at(plan, index)
+    if phase == "optimize":
+        return executor.submit(_run_optimization_task, task)
+    if phase == "evaluate":
+        return executor.submit(
+            _run_evaluation_task,
+            task,
+            plan.metrics.strict,
+            plan.metrics.compute_stage_metrics,
+            plan.matching,
+            plan.visualization,
+        )
+    if phase == "match":
+        return executor.submit(_run_matching_task, task, plan.matching)
+    raise ValueError(f"Unknown task phase {phase!r}.")
+
+
 def run_benchmark_worker(plan_path: str, allocation_index: int) -> int:
-    """Optimize and then evaluate every task in one Slurm allocation."""
+    """Optimize, evaluate, and match every task in one Slurm allocation.
+
+    Each concurrent slot (``task_cpus`` CPUs) carries one task through its
+    remaining phases (:func:`task_phases`). A task's next phase takes the
+    slot its last phase freed, ahead of any new task, so a task is evaluated
+    and matched as soon as it is optimized and every CPU stays busy. Every
+    phase runs in a fresh process (``max_tasks_per_child=1``), so one
+    phase's memory is returned before the next starts. Aggregation, the
+    sweep's matching reports included, runs once the allocation is done.
+    """
 
     plan: SlurmPlan | None = None
     failed = False
@@ -472,67 +422,60 @@ def run_benchmark_worker(plan_path: str, allocation_index: int) -> int:
         allocation = _allocation_at(plan, allocation_index)
         _validate_worker_cpus(allocation.cpus)
         work_started = True
-        with ProcessPoolExecutor(
-            max_workers=allocation.cpus // allocation.task_cpus
-        ) as executor:
-            futures = {
-                executor.submit(
-                    _run_optimization_task,
-                    _task_at(plan, index),
-                    plan.execution,
-                ): index
-                for index in allocation.task_indices
-            }
-            for future in as_completed(futures):
-                try:
-                    _report_task_error("Optimization", futures[future], future.result())
-                except Exception as exc:
-                    print(
-                        f"Optimization task {futures[future]} failed: {exc}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    failed = True
-        with ProcessPoolExecutor(
-            max_workers=evaluation_workers(allocation)
-        ) as executor:
-            futures = {
-                executor.submit(
-                    _run_evaluation_task,
-                    _task_at(plan, index),
-                    plan.metrics.strict,
-                    plan.metrics.compute_stage_metrics,
-                    plan.matching,
-                    plan.visualization,
-                    plan.execution,
-                ): index
-                for index in allocation.task_indices
-            }
-            for future in as_completed(futures):
-                try:
-                    _report_task_error("Evaluation", futures[future], future.result())
-                except Exception as exc:
-                    print(
-                        f"Evaluation task {futures[future]} failed: {exc}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    failed = True
+        slots = max(1, allocation.cpus // allocation.task_cpus)
+        remaining = {
+            index: deque(
+                task_phases(_task_at(plan, index), plan.execution, plan.matching)
+            )
+            for index in allocation.task_indices
+        }
+        queued = deque(index for index in allocation.task_indices if remaining[index])
+        continuing: deque[int] = deque()
+        with ProcessPoolExecutor(max_workers=slots, max_tasks_per_child=1) as executor:
+            running = {}
+            while queued or continuing or running:
+                while len(running) < slots and (continuing or queued):
+                    index = continuing.popleft() if continuing else queued.popleft()
+                    phase = remaining[index].popleft()
+                    future = _submit_phase(executor, plan, index, phase)
+                    running[future] = (index, phase)
+                done, _ = wait(running, return_when=FIRST_COMPLETED)
+                for future in done:
+                    index, phase = running.pop(future)
+                    try:
+                        _report_task_error(phase, index, future.result())
+                    except Exception as exc:
+                        print(
+                            f"Task {index} {phase} failed: {exc}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        failed = True
+                        remaining[index].clear()
+                        continue
+                    if remaining[index]:
+                        continuing.append(index)
     except Exception as exc:
         print(f"Benchmark allocation failed: {exc}", file=sys.stderr, flush=True)
         failed = True
     finally:
         if plan is not None and work_started:
             try:
-                aggregate_results(
-                    plan.output_root,
-                    summary_csv=plan.metrics.summary_csv,
-                    stages_csv=plan.metrics.stages_csv,
-                )
+                _aggregate(plan)
             except Exception as exc:
                 print(f"Aggregation failed: {exc}", file=sys.stderr, flush=True)
                 failed = True
     return 1 if failed or plan is None else 0
+
+
+def _aggregate(plan: SlurmPlan) -> None:
+    """Rebuild the sweep's CSVs, its matching reports too, from every run."""
+    aggregate_results(
+        plan.output_root,
+        summary_csv=plan.metrics.summary_csv,
+        stages_csv=plan.metrics.stages_csv,
+        matching_dir=plan.matching.assignment_dir if plan.matching.enabled else None,
+    )
 
 
 def _validate_sweep(sweep: SimulationSweep) -> None:
@@ -548,22 +491,19 @@ def _validate_plan(plan: SlurmPlan) -> None:
         raise ValueError("Slurm plan output_root must be absolute.")
     if not Path(plan.project_root).is_absolute():
         raise ValueError("Slurm plan project_root must be absolute.")
-    if (
-        not plan.tasks
-        and not plan.assignment_plan_path
-        and not (plan.execution and plan.execution.skip_existing)
-    ):
+    if not plan.tasks and not (plan.execution and plan.execution.skip_existing):
         raise ValueError("Slurm benchmark plan contains no tasks.")
     if (
         plan.visualization.artifact_dir
         and not Path(plan.visualization.artifact_dir).is_absolute()
     ):
         raise ValueError("Visualization artifact_dir must be absolute for Slurm.")
-    if plan.matching.enabled:
-        if not plan.assignment_plan_path:
-            raise ValueError("Matching-enabled plans require an assignment Slurm plan.")
-        if not Path(plan.assignment_plan_path).is_absolute():
-            raise ValueError("Assignment Slurm plan path must be absolute.")
+    if plan.matching.enabled and not (
+        plan.matching.config and Path(plan.matching.config).is_absolute()
+    ):
+        raise ValueError(
+            "Matching-enabled Slurm plans need an absolute matching.config."
+        )
 
     hashes: dict[str, str] = {}
     output_dirs: dict[str, str] = {}
@@ -722,6 +662,7 @@ def _sbatch_options(
         f"--job-name=benchmark-{index}",
         "--ntasks=1",
         f"--cpus-per-task={allocation.cpus}",
+        f"--mem-per-cpu={SBATCH_MEM_PER_CPU}",
         f"--chdir={plan.project_root}",
         f"--output={log_prefix}.out",
         f"--error={log_prefix}.err",
@@ -789,8 +730,8 @@ def _report_task_error(phase: str, index: int, result: TaskResult) -> None:
     """Log a task's saved ERROR without failing its allocation.
 
     The ERROR is in the task's result and summary rows, and its assignment
-    targets carry skip markers, so the ``afterok`` assignment jobs can still
-    match every other task. Only a crash fails the allocation.
+    targets carry skip markers, so its matching is recorded as skipped. Only
+    a crash fails the allocation.
     """
     if str(result.status).upper() == "ERROR":
         print(
@@ -889,23 +830,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Plan: {plan_path}")
             print(f"Submission script: {script_path}")
             print(f"Benchmark tasks: {len(plan.tasks)}")
-            if plan.assignment_plan_path:
-                from assignment.slurm import load_plan as load_assignment_plan
-
-                assignment_plan, _ = load_assignment_plan(plan.assignment_plan_path)
-                print(
-                    f"Assignment tasks: {len(assignment_plan['assignment_tasks'])} "
-                    f"across {len(assignment_plan['jobs'])} Slurm jobs"
-                )
+            if plan.matching.enabled:
+                print("Matching: in each task's allocation, after its evaluation")
             if args.command == "submit":
                 submitted = submit_plan(plan, plan_path, sbatch=args.sbatch)
                 if not submitted:
                     print("All benchmark tasks already completed; no jobs submitted.")
-                    aggregate_results(
-                        plan.output_root,
-                        summary_csv=plan.metrics.summary_csv,
-                        stages_csv=plan.metrics.stages_csv,
-                    )
+                    _aggregate(plan)
                 else:
                     for job in submitted:
                         print(
