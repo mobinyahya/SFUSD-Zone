@@ -25,6 +25,7 @@ import pytest
 import yaml
 
 from assignment.student_assignment.choice_ranks import ASSIGNMENT_SCHEMA_VERSION
+from assignment.student_assignment.lottery_files import read_lotteries
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PIPELINE_SCRIPT = REPO_ROOT / "scripts" / "run_models_estimates.sh"
@@ -148,15 +149,16 @@ def test_full_pipeline_tiny(tmp_path):
     # -- Step 2: assignment CSVs for every run and iteration ---------------
     for label in EXPECTED_RUN_LABELS:
         run_dir = tmp_path / "runs" / label
-        assignment_csvs = sorted(run_dir.rglob("*_iteration*.csv"))
-        found_iterations = {
-            int(path.stem.rsplit("iteration", 1)[1]) for path in assignment_csvs
-        }
-        assert set(EXPECTED_ITERATIONS) <= found_iterations, (
+        # One long-format file per policy variant holds every lottery.
+        assert not list(run_dir.rglob("*_iteration*.csv"))
+        lottery_files = sorted(run_dir.rglob("*_lotteries.csv.gz"))
+        assert len(lottery_files) == 1, lottery_files
+        saved = read_lotteries(lottery_files[0])
+        assert set(EXPECTED_ITERATIONS) <= set(saved.lotteries), (
             f"Run {label}: expected iterations {EXPECTED_ITERATIONS}, "
-            f"found {sorted(found_iterations)}"
+            f"found {saved.lotteries}"
         )
-        assignment_df = pd.read_csv(assignment_csvs[0])
+        assignment_df = saved.frame(saved.lotteries[0])
         canonical_columns = {
             "assignment_schema_version",
             "studentno",

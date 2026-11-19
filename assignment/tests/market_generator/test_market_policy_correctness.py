@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -9,7 +10,14 @@ import yaml
 from click.testing import CliRunner
 from loaders import ResolvedSource
 
+from assignment.student_assignment.choice_ranks import ASSIGNMENT_SCHEMA_VERSION
 from assignment.student_assignment.cli import cli
+from assignment.student_assignment.lottery_files import (
+    read_lotteries,
+    render_lottery,
+    saved_lotteries,
+    write_lotteries,
+)
 from assignment.student_assignment.evaluation.match_evaluator import MatchEvaluator
 from assignment.student_assignment.market_generator.policy import Policy
 from assignment.student_assignment.market_generator.preference_generator import (
@@ -275,7 +283,7 @@ def _configure_reuse_market(market):
 
 
 def _write_reusable_assignment(market, iteration):
-    return market._save_assignment(
+    assignment = market._save_assignment(
         np.array([[1], [0]]),
         Policy("zones", 0, "STB"),
         iteration,
@@ -283,6 +291,12 @@ def _write_reusable_assignment(market, iteration):
         np.array([1, 2]),
         np.zeros(2),
     )
+    market._flush_pending_lotteries()
+    return assignment
+
+
+def _lottery_data_path(tmp_path):
+    return tmp_path / "assignments/status_quo/policy/policy_lotteries.csv.gz"
 
 
 def test_saved_rank_uses_source_listed_position_not_filtered_mechanism_rank(tmp_path):
@@ -409,7 +423,8 @@ def test_incomplete_assignment_run_is_regenerated(tmp_path):
 
     assert len(assignments) == 2
     assert market._run_single_iteration_of_policy.call_count == 2
-    assert not market._assignment_save_path(Policy("zones", 0, "STB"), 0).exists()
+    assert not market._saved_assignment_exists(Policy("zones", 0, "STB"), 0)
+    assert not _lottery_data_path(tmp_path).exists()
 
 
 def test_invalid_complete_assignment_run_is_rejected(tmp_path):
@@ -417,8 +432,9 @@ def test_invalid_complete_assignment_run_is_rejected(tmp_path):
     _configure_reuse_market(market)
     for iteration in [0, 1]:
         _write_reusable_assignment(market, iteration)
-    invalid_path = market._assignment_save_path(Policy("zones", 0, "STB"), 1)
-    pd.read_csv(invalid_path).iloc[[0]].to_csv(invalid_path, index=False)
+    data_path = _lottery_data_path(tmp_path)
+    truncated = read_lotteries(data_path).frame(1).iloc[[0]]
+    write_lotteries(data_path, {1: render_lottery(truncated)})
     market._run_single_iteration_of_policy = Mock()
 
     with pytest.raises(ValueError, match="does not match the current students"):
@@ -442,7 +458,8 @@ def test_assignment_reuse_can_be_disabled(tmp_path):
     list(market.create_iterations_generator())
 
     assert market._run_single_iteration_of_policy.call_count == 2
-    assert not market._assignment_save_path(Policy("zones", 0, "STB"), 0).exists()
+    assert not market._saved_assignment_exists(Policy("zones", 0, "STB"), 0)
+    assert not _lottery_data_path(tmp_path).exists()
 
 
 def test_assignment_reuse_rejects_rank_basis_from_different_policy_mode(tmp_path):
@@ -489,8 +506,12 @@ def test_assignment_metrics_export_is_disabled_when_omitted(tmp_path, monkeypatc
         np.array([1, 2]),
         np.zeros(2),
     )
+    market._flush_pending_lotteries()
 
-    assert (tmp_path / "assignments/status_quo/policy/policy_iteration0.csv").is_file()
+    assert saved_lotteries(_lottery_data_path(tmp_path)) == {0}
+    assert not (
+        tmp_path / "assignments/status_quo/policy/policy_iteration0.csv"
+    ).exists()
     from_scenario.assert_not_called()
     assert not (tmp_path / "assignments/aggregate_metrics").exists()
 
@@ -562,8 +583,7 @@ def test_assignment_metrics_are_averaged_by_full_policy_variant(tmp_path, monkey
     assert reports["zip_code"].loc[0, "metric"] == 2
     assert reports["attendance_area"].loc[0, "metric"] == 2
     assert reports["citywide"].loc[0, "metric"] == 2
-    assert (tmp_path / "assignments/status_quo/policy/policy_iteration0.csv").is_file()
-    assert (tmp_path / "assignments/status_quo/policy/policy_iteration1.csv").is_file()
+    assert saved_lotteries(_lottery_data_path(tmp_path)) == {0, 1}
     assert not (tmp_path / "assignments/aggregate_metrics").exists()
 
 
@@ -604,11 +624,12 @@ def test_assignment_metrics_default_to_citywide_only(tmp_path, monkeypatch):
     )
 
 
-def test_failed_metrics_export_preserves_written_assignment(tmp_path, monkeypatch):
-    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=True)
-    save_path = tmp_path / "assignments/status_quo/policy/policy_iteration0.csv"
-    save_path.parent.mkdir(parents=True)
-    save_path.write_text("stale assignment")
+def test_failed_lottery_run_leaves_no_partial_lottery_file(tmp_path, monkeypatch):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    _configure_reuse_market(market)
+    _write_reusable_assignment(market, 0)
+    before = _lottery_data_path(tmp_path).read_bytes()
+    market.config["export-aggregate-metrics"] = True
     evaluator = Mock()
     evaluator.eval_aggregate_metric_reports.side_effect = ValueError("report failed")
     monkeypatch.setattr(
@@ -617,19 +638,86 @@ def test_failed_metrics_export_preserves_written_assignment(tmp_path, monkeypatc
         Mock(return_value=evaluator),
     )
 
-    with pytest.raises(ValueError, match="report failed"):
-        market._save_assignment(
+    def lottery(iteration):
+        yield market._save_assignment(
             np.array([[1], [0]]),
             Policy("zones", 0, "STB"),
-            0,
+            iteration,
             np.array([1, 0]),
             np.array([1, 2]),
             np.zeros(2),
         )
 
-    assignment = pd.read_csv(save_path)
-    assert assignment["studentno"].tolist() == [1, 2]
-    assert assignment["programno"].tolist() == [1, 0]
+    with pytest.raises(ValueError, match="report failed"):
+        list(market._buffered_lotteries([lottery(1)]))
+
+    # Lottery 1 never reaches disk, and the file holding lottery 0 is intact.
+    assert market._pending_lottery_buffer() == {}
+    assert saved_lotteries(_lottery_data_path(tmp_path)) == {0}
+    assert _lottery_data_path(tmp_path).read_bytes() == before
+
+
+def test_lottery_file_rebuilds_the_per_lottery_frames(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    _configure_reuse_market(market)
+    fresh = [_write_reusable_assignment(market, iteration) for iteration in [0, 1]]
+    saved = read_lotteries(_lottery_data_path(tmp_path))
+    sidecar = saved.sidecar
+
+    assert saved.lotteries == [0, 1]
+    assert sidecar["schema_version"] == ASSIGNMENT_SCHEMA_VERSION
+    assert sidecar["programcodes"] == {"0": "", "1": "101-GE-KG"}
+    assert set(sidecar["derived_columns"]) == {
+        "assignment_schema_version",
+        "rank_basis",
+        "utility_rank",
+        "programcodes",
+    }
+    assert sidecar["columns"] == list(fresh[0].columns)
+    for iteration, frame in enumerate(fresh):
+        legacy = pd.read_csv(io.StringIO(frame.to_csv(index=False)))
+        pd.testing.assert_frame_equal(saved.frame(iteration), legacy)
+
+
+def test_legacy_per_lottery_assignment_files_are_reused(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    _configure_reuse_market(market)
+    frames = [_write_reusable_assignment(market, iteration) for iteration in [0, 1]]
+    _lottery_data_path(tmp_path).unlink()
+    for iteration, frame in enumerate(frames):
+        legacy_path = market._assignment_save_path(Policy("zones", 0, "STB"), iteration)
+        frame.assign(assignment_schema_version=3).to_csv(legacy_path, index=False)
+    market._run_single_iteration_of_policy = Mock()
+
+    reused = list(market.create_iterations_generator())
+
+    market._run_single_iteration_of_policy.assert_not_called()
+    assert [frame["programno"].tolist() for frame in reused] == [[1, 0], [1, 0]]
+    assert all(
+        frame["assignment_schema_version"].eq(ASSIGNMENT_SCHEMA_VERSION).all()
+        for frame in reused
+    )
+
+
+def test_target_iteration_keeps_sibling_lotteries(tmp_path):
+    market = _assignment_saving_market(tmp_path, export_aggregate_metrics=False)
+    _configure_reuse_market(market)
+    _write_reusable_assignment(market, 0)
+
+    def run(iteration, _policy):
+        yield market._save_assignment(
+            np.array([[1], [0]]),
+            Policy("zones", 0, "STB"),
+            iteration,
+            np.array([1, 0]),
+            np.array([1, 2]),
+            np.zeros(2),
+        )
+
+    market._run_single_iteration_of_policy = Mock(side_effect=run)
+    list(market.create_target_iteration_generator(1, include_real_match=False))
+
+    assert saved_lotteries(_lottery_data_path(tmp_path)) == {0, 1}
 
 
 def test_combined_metric_writer_creates_only_four_run_level_csvs(tmp_path):
@@ -932,3 +1020,50 @@ def test_installed_cli_runs_subconfig_aware_simulation(tmp_path, monkeypatch):
     assert calls[-1] == "simulate"
     assert calls[0][0]["subconfigs"] == ["first", "second"]
     assert calls[0][1] == assignment_path.resolve()
+
+
+def _reference_metric_csv(path, report):
+    """The pre-optimization writer's text and dtypes, for comparison."""
+    report.to_csv(path, index=False)
+    dtypes = {}
+    for column in report:
+        inferred = pd.api.types.infer_dtype(report[column].dropna(), skipna=True)
+        if inferred == "integer":
+            dtypes[column] = "Int64"
+        elif inferred == "boolean":
+            dtypes[column] = "boolean"
+        elif inferred in {"string", "unicode"}:
+            dtypes[column] = "string"
+    return path.read_bytes(), dtypes
+
+
+def test_metric_csv_writer_matches_reference_writer(tmp_path):
+    report = pd.DataFrame(
+        {
+            "config_name": ["a/x", "a/y", "a/z"],
+            "program_id": ["1-GE-KG", "2-GE-KG", None],
+            "count": [1, 2, 3],
+            "share": [0.1 + 0.2, np.nan, 1 / 3],
+            "flag": [True, False, True],
+            "nullable": pd.array([1, None, 3], dtype="Int64"),
+            "mixed": [1.0, 2.0, np.nan],
+        }
+    )
+    metadata = MarketGenerator._write_metric_csv(
+        tmp_path / "new.csv", "citywide", report
+    )
+    expected_bytes, expected_dtypes = _reference_metric_csv(
+        tmp_path / "old.csv", report
+    )
+
+    assert (tmp_path / "new.csv").read_bytes() == expected_bytes
+    assert metadata["dtypes"] == expected_dtypes
+    assert metadata["sha256"] == MarketGenerator._file_sha256(tmp_path / "new.csv")
+
+
+def test_metric_csv_writer_rejects_values_that_do_not_round_trip(tmp_path):
+    # "NA" is read back as missing, so the file would not mean the report.
+    report = pd.DataFrame({"config_name": ["a/x"], "label": ["NA"]})
+
+    with pytest.raises(ValueError, match="did not round-trip"):
+        MarketGenerator._write_metric_csv(tmp_path / "bad.csv", "citywide", report)

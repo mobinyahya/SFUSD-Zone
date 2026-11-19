@@ -32,6 +32,11 @@ from .slurm_graph import (
     validate_job_graph,
 )
 from .student_assignment.configerator import Configerator
+from .student_assignment.lottery_files import (
+    DATA_SUFFIX as LOTTERY_DATA_SUFFIX,
+    SIDECAR_SUFFIX as LOTTERY_SIDECAR_SUFFIX,
+    saved_lotteries,
+)
 from .student_assignment.market_generator.school_choice_market_generator import (
     MarketGenerator,
 )
@@ -838,12 +843,25 @@ def _is_iteration_assignment_done(
     zoned_at = (
         zone_file.stat().st_mtime_ns if zone_file and zone_file.is_file() else None
     )
-    return any(
+    if any(
         match.is_file()
         and match.stat().st_size > 0
         and (zoned_at is None or match.stat().st_mtime_ns >= zoned_at)
         for match in subconfig_dir.glob(f"**/*_iteration{iteration}.csv")
-    )
+    ):
+        return True
+    # A variant's lotteries share one long-format file; its sidecar lists them.
+    for sidecar in subconfig_dir.glob(f"**/*{LOTTERY_SIDECAR_SUFFIX}"):
+        data_path = sidecar.with_name(
+            sidecar.name[: -len(LOTTERY_SIDECAR_SUFFIX)] + LOTTERY_DATA_SUFFIX
+        )
+        if (
+            data_path.is_file()
+            and (zoned_at is None or sidecar.stat().st_mtime_ns >= zoned_at)
+            and iteration in saved_lotteries(data_path)
+        ):
+            return True
+    return False
 
 
 def _is_real_match_assignment_done(

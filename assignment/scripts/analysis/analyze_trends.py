@@ -30,6 +30,12 @@ from loaders import anchor_data_config
 from tqdm import tqdm
 
 from student_assignment.evaluation.match_evaluator import MatchEvaluator
+from student_assignment.lottery_files import (
+    SIDECAR_SUFFIX,
+    lottery_file_paths,
+    read_saved_lottery,
+    saved_lotteries,
+)
 from student_assignment.utils.plotting import (
     apply_plot_style,
     get_color_palette,
@@ -70,7 +76,7 @@ def _evaluate_csv_worker(args: Task) -> pd.Series:
             _new_ctip_path,
             data_config,
         ) = args
-        file_assignment = pd.read_csv(assignment_path)
+        file_assignment = read_saved_lottery(assignment_path)
         evaluator_kwargs = {
             "dropout": False,
             "low_income": 95292,
@@ -94,7 +100,7 @@ def _evaluate_csv_worker(args: Task) -> pd.Series:
         new_ctip_path,
     ) = args
     student_data = pd.read_csv(student_data_path)
-    file_assignment = pd.read_csv(assignment_path)
+    file_assignment = read_saved_lottery(assignment_path)
     match_eval = MatchEvaluator(
         student_data,
         file_assignment,
@@ -142,7 +148,19 @@ def _collect_csv_files(run: dict) -> tuple[list[str], bool]:
         return [run["run_csv"]], True
 
     csv_files = []
-    for path in sorted(Path(run["folder"]).rglob("*.csv")):
+    # A variant's lotteries live in one long-format file; each lottery is
+    # listed under its per-lottery path, which ``read_saved_lottery`` reads.
+    lottery_paths = set()
+    for sidecar in Path(run["folder"]).rglob(f"*{SIDECAR_SUFFIX}"):
+        stem = sidecar.name[: -len(SIDECAR_SUFFIX)]
+        data_path, _ = lottery_file_paths(sidecar.with_name(f"{stem}_iteration0.csv"))
+        lottery_paths.update(
+            sidecar.with_name(f"{stem}_iteration{lottery}.csv")
+            for lottery in saved_lotteries(data_path)
+        )
+    on_disk = set(Path(run["folder"]).rglob("*.csv"))
+    csv_files.extend(str(path) for path in sorted(lottery_paths - on_disk))
+    for path in sorted(on_disk):
         columns = set(pd.read_csv(path, nrows=0).columns)
         required = {"studentno", "programno", "rank"}
         if required <= columns and "programcodes" in columns:
@@ -162,7 +180,7 @@ def _collect_csv_files(run: dict) -> tuple[list[str], bool]:
                 f"CSV appears to be an assignment but is missing {sorted(missing)}: "
                 f"{path}"
             )
-    return csv_files, False
+    return sorted(csv_files, key=Path), False
 
 
 def _aggregate_metrics(
