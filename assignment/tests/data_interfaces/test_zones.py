@@ -500,6 +500,45 @@ def test_zone_eligibility_does_not_mutate_zone_priority(aa_config):
     np.testing.assert_array_equal(zones.zone_priority_matrix, base_priority)
 
 
+
+@pytest.mark.parametrize("tk_access", [False, True])
+def test_tk_access_opens_only_the_promote_feeder(aa_config, tk_access):
+    base_priority = np.array([[1, 0, 0], [0, 1, 0]])
+    promotion = np.array([[0, 0, 1], [0, 0, 0]])
+    students = SimpleNamespace(
+        n=2,
+        studentno2idx={10: 0, 11: 1},
+        student_data=pd.DataFrame(
+            {
+                "idschoolattendance": [101, 102],
+                "census_blockgroup": [1001, 1002],
+                "census_block": [10001, 10002],
+                "ctip1": [np.nan, np.nan],
+            },
+            index=pd.Index([10, 11], name="studentno"),
+        ),
+        sibling=lambda _programs: np.zeros((2, 3), dtype=int),
+        promotion=lambda _indices: promotion,
+    )
+    zones = Zones(
+        {
+            **aa_config,
+            "sibling-access": False,
+            "restrict-zone": True,
+            "tk-access": tk_access,
+        },
+        pd.DataFrame(),
+        SimpleNamespace(num_programs=3, indices={}),
+        students,
+        grade=GRADE,
+    )
+    zones.programs_for_area_id = lambda _aa, _bg, _block, studentno: base_priority[
+        students.studentno2idx[studentno]
+    ].copy()
+
+    expected = base_priority + promotion if tk_access else base_priority
+    np.testing.assert_array_equal(zones.zone_eligibility_matrix, expected)
+
 def _mission_bay_zones(tmp_path, student_areas):
     """Zones over a stale two-area map (101, 102) and schools 101, 102, 999."""
     zone_file = tmp_path / "aa_zones.csv"

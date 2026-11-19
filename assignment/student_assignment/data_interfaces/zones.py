@@ -617,7 +617,10 @@ class Zones:
     def zone_eligibility_matrix(self) -> np.ndarray:
         """Create a 0-1 matrix indicating zone eligibility for each student-program pair.
 
-        This differs from zone priority in terms of sibling and CTIP zone eligibility exeptions.
+        This differs from zone priority in terms of sibling, TK-promote and CTIP zone
+        eligibility exeptions: ``sibling-access`` opens every program at a
+        sibling's school, and ``tk-access`` (default false) the one program a
+        TK-to-K promote is promoted into.
 
         Returns:
             np.ndarray: 0-1 (num students) by (num programs) matrix where 1 indicates zone eligibility
@@ -632,6 +635,8 @@ class Zones:
         )
         sibling_array = self.students.sibling(self.programs)
         in_zone += int(self.config["sibling-access"]) * sibling_array
+        if self.config.get("tk-access", False):
+            in_zone += self.students.promotion(self.programs.indices)
         in_zone += int(not self.config["restrict-zone"]) * 1
         in_zone += int(self.config["restrict-zone"] == "CTIP_access") * ctip
         in_zone = np.clip(in_zone, 0, 1)
