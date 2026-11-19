@@ -58,6 +58,10 @@ def build_capacity_reference(problem, zoning, market, lottery_scale):
             "at every base geographic unit. Check years, grades and population selectors."
         )
 
+    if market.lottery is not None:
+        from optimization.lottery_da import lottery_capacity_reference
+
+        return lottery_capacity_reference(problem, zoning, market, lottery_scale)
     result = finite_grid_oracle(market, zoning, lottery_scale, check_minimality=False)
     aa = {
         p.program_id: attendance_area_seats(p)

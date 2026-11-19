@@ -18,11 +18,13 @@
 # freelunch_prob) on/off:
 #   restrictive_aa_sib_ctip, restrictive_aa_sib_ctip_reserves,
 #   restrictive_aa_sib_no_ctip, restrictive_aa_sib_no_ctip_reserves
-# The MID market the maps are drawn against reads the policy: its CTIP option
-# and priority weights, sibling (not TK) access across zone lines, and for the
-# reserve policies the reserves themselves, matched by a deferred acceptance
-# on one fixed lottery (mid_reserve_seed 0; optimization/reserve_da.py). Each
-# run is then matched under its own policy only.
+# The market the maps are drawn against is the policy's own: each student's
+# list as the simulator builds it (submitted programs, their zone's GE program,
+# the designation order), the policy's priorities, sibling (not TK) access
+# across zone lines and its reserves, matched by deferred acceptance on 5 MTB
+# lotteries (mid_lotteries, mid_lottery_seed 0; optimization/lottery_da.py).
+# Replaying the simulator's own lottery through it reproduces the simulator's
+# match for every student. Each run is then matched under its own policy only.
 #
 # data: the seven ideal 2026-27 capacity scenarios (the Nov 13 baseline, the
 # Aug baseline and its five single-school variants) x four student
@@ -48,7 +50,8 @@ mode: run
 optimization_defaults:
   centroids_type: all
   hints: voronoi
-  workers: 8
+  # One CPU per run, refinement steps included, so Slurm packs a run per core.
+  workers: 1
   save_solver_logs: false
   save_solver_progress: false
   mid_preference_source: stated
@@ -301,8 +304,10 @@ metrics:
   summary_csv: 'summary.csv'
   stages_csv: 'stages.csv'
 
+# No rendered maps or heatmaps: zonings are in zonings.json.xz, and plots are
+# made afterwards from the summaries.
 visualization:
-  enabled: true
+  enabled: false
   stages: final
 
 matching:

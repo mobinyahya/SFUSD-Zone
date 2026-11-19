@@ -8,6 +8,7 @@ utility-model:
 save-assignment: enum(True)
 export-aggregate-metrics: bool(required=False)
 export-local-metrics: bool(required=False)
+export-area-metrics: bool(required=False)  # per-ZIP and per-attendance-area reports with the local ones; default true
 export_heatmaps: bool(required=False)
 reuse_assignments: bool(required=False)
 random-seed: int()

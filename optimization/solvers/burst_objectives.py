@@ -294,6 +294,11 @@ def mid_outcome(
     lottery_scale: int,
     warm_cutoffs: Mapping[str, int] | None = None,
 ) -> MidOutcome:
+    if market.lottery is not None:
+        # A matching-policy market designates inside its own match.
+        from optimization.lottery_da import lottery_outcome
+
+        return lottery_outcome(market, zoning)
     result = finite_grid_oracle(
         market,
         dict(zoning),

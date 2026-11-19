@@ -413,13 +413,12 @@ def optimization_config_hash(
         semantic.pop("keep_centroid_radius", None)
     if semantic.get("objective_weights") is None:
         semantic.pop("objective_weights", None)
-    # The status-quo market, and a reserve seed only reserve policies read,
-    # keep the task ids of runs from before the settings existed.
+    # The status-quo market, and the lottery settings only a matching_policy
+    # market reads, keep the task ids of runs from before they existed.
     if semantic.get("matching_policy") is None:
         semantic.pop("matching_policy", None)
-        semantic.pop("mid_reserve_seed", None)
-    elif semantic.get("mid_reserve_seed") == 0:
-        semantic.pop("mid_reserve_seed", None)
+        semantic.pop("mid_lottery_seed", None)
+        semantic.pop("mid_lotteries", None)
     if semantic.get("hint_zoning") is None:
         semantic.pop("hint_zoning", None)
     elif semantic["hint_zoning"] == ATTENDANCE_AREA_HINT:

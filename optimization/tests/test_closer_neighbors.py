@@ -102,7 +102,7 @@ def test_cache_is_shared_by_level_and_reused_without_source_loaders(
         school_loader=_schools,
     )
     expected = first.for_graph("Block_0", G)
-    path = first.cache_path("Block_0")
+    (path,) = (first.cache_dir / "closer_neighbors_Block_0").glob("*.pickle")
 
     def fail(*args, **kwargs):
         raise AssertionError("valid cache should not reload source data")
@@ -119,7 +119,8 @@ def test_cache_is_shared_by_level_and_reused_without_source_loaders(
         / "cache"
         / "closer_neighbors"
         / f"v{CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION}"
-        / "closer_neighbors_Block_0.pickle"
+        / "closer_neighbors_Block_0"
+        / path.name
     )
     with path.open("rb") as file:
         payload = pickle.load(file)
@@ -146,9 +147,10 @@ def test_level_file_keeps_distinct_graph_membership_variants(
     store.for_graph("Block_1", first)
     store.for_graph("Block_1", second)
 
-    with store.cache_path("Block_1").open("rb") as file:
-        payload = pickle.load(file)
-    assert len(payload["variants"]) == 2
+    assert len(store.level_variants("Block_1")) == 2
+    assert (
+        len(list((store.cache_dir / "closer_neighbors_Block_1").glob("*.pickle"))) == 2
+    )
 
 
 def test_cache_schema_version_invalidates_stale_in_file_data(
@@ -156,14 +158,18 @@ def test_cache_schema_version_invalidates_stale_in_file_data(
 ):
     G = _graph()
     scenario = _scenario(tmp_path, scenario_factory)
-    path = (
+    CloserNeighborArtifactStore(
+        scenario,
+        geometry_loader=lambda unit: _base_geometry(),
+        school_loader=_schools,
+    ).for_graph("Block_0", G)
+    (path,) = (
         tmp_path
         / "cache"
         / "closer_neighbors"
         / f"v{CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION}"
-        / "closer_neighbors_Block_0.pickle"
-    )
-    path.parent.mkdir(parents=True)
+        / "closer_neighbors_Block_0"
+    ).glob("*.pickle")
     with path.open("wb") as file:
         pickle.dump(
             {
@@ -211,13 +217,9 @@ def test_source_bytes_are_part_of_closer_neighbor_variant_identity(
     )
     second.for_graph("Block_0", _graph())
 
-    with second.cache_path("Block_0").open("rb") as file:
-        payload = pickle.load(file)
-    assert len(payload["variants"]) == 2
-    assert (
-        len({variant["source_fingerprint"] for variant in payload["variants"].values()})
-        == 2
-    )
+    variants = second.level_variants("Block_0")
+    assert len(variants) == 2
+    assert len({variant["source_fingerprint"] for variant in variants.values()}) == 2
 
 
 def test_crosswalk_bytes_are_part_of_closer_neighbor_variant_identity(
@@ -241,13 +243,9 @@ def test_crosswalk_bytes_are_part_of_closer_neighbor_variant_identity(
     )
     second.for_graph("Block_0", _graph())
 
-    with second.cache_path("Block_0").open("rb") as file:
-        payload = pickle.load(file)
-    assert len(payload["variants"]) == 2
-    assert (
-        len({variant["source_fingerprint"] for variant in payload["variants"].values()})
-        == 2
-    )
+    variants = second.level_variants("Block_0")
+    assert len(variants) == 2
+    assert len({variant["source_fingerprint"] for variant in variants.values()}) == 2
 
 
 @pytest.mark.parametrize(
@@ -283,4 +281,50 @@ def test_artifact_supports_every_predefined_level(
     data = store.for_graph(level, G)
 
     assert set(data.closer_neighbors) == set(G.nodes())
-    assert store.cache_path(level).exists()
+    assert store.level_variants(level)
+
+
+def test_a_split_legacy_cache_serves_its_variants_without_rebuilding(
+    tmp_path, scenario_factory
+):
+    import shutil
+
+    from optimization.data.closer_neighbors import split_legacy_cache
+
+    scenario = _scenario(tmp_path, scenario_factory)
+    store = CloserNeighborArtifactStore(
+        scenario,
+        geometry_loader=lambda unit: _base_geometry(),
+        school_loader=_schools,
+    )
+    first = nx.path_graph(2)
+    first.nodes[0]["block_ids"] = [10, 12]
+    first.nodes[1]["block_ids"] = [11]
+    second = nx.path_graph(2)
+    second.nodes[0]["block_ids"] = [10]
+    second.nodes[1]["block_ids"] = [11, 12]
+    expected = [store.for_graph("Block_1", G) for G in (first, second)]
+    # Rewrite the cache in the v4 layout: one file holding every variant.
+    legacy = tmp_path / "cache" / "closer_neighbors" / "v4"
+    legacy.mkdir(parents=True)
+    with (legacy / "closer_neighbors_Block_1.pickle").open("wb") as file:
+        pickle.dump(
+            {
+                "schema_version": 4,
+                "level": "Block_1",
+                "unit": "Block",
+                "variants": store.level_variants("Block_1"),
+            },
+            file,
+        )
+    shutil.rmtree(store.cache_dir)
+
+    assert len(split_legacy_cache(tmp_path / "cache")) == 2
+
+    def fail(*args, **kwargs):
+        raise AssertionError("a split cache should not reload source data")
+
+    reader = CloserNeighborArtifactStore(
+        scenario, geometry_loader=fail, school_loader=fail
+    )
+    assert [reader.for_graph("Block_1", G) for G in (first, second)] == expected

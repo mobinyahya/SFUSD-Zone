@@ -543,8 +543,14 @@ def test_assignment_metrics_are_averaged_by_full_policy_variant(tmp_path, monkey
     )
     evaluator.update_assignments.assert_called_once()
     assert evaluator.eval_aggregate_metric_reports.call_args_list == [
-        (("status_quo/policy",), {"include_local_metrics": True}),
-        (("status_quo/policy",), {"include_local_metrics": True}),
+        (
+            ("status_quo/policy",),
+            {"include_local_metrics": True, "include_area_metrics": True},
+        ),
+        (
+            ("status_quo/policy",),
+            {"include_local_metrics": True, "include_area_metrics": True},
+        ),
     ]
     assert reports["program"]["program_id"].tolist() == [
         "101-GE-KG",
@@ -594,7 +600,7 @@ def test_assignment_metrics_default_to_citywide_only(tmp_path, monkeypatch):
 
     assert set(reports) == {"citywide"}
     evaluator.eval_aggregate_metric_reports.assert_called_once_with(
-        "status_quo/policy", include_local_metrics=False
+        "status_quo/policy", include_local_metrics=False, include_area_metrics=True
     )
 
 

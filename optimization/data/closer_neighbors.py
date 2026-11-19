@@ -21,8 +21,11 @@ from loaders import DataScenario
 from optimization.data import loaders
 from optimization.levels import LevelSpec
 
-# Bumped to 4 when Mission Bay's canonical school ID became 1731.
-CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION = 4
+# Bumped to 4 when Mission Bay's canonical school ID became 1731, and to 5 when
+# each variant moved to its own file: one shared file of every variant made a
+# Block_0 run unpickle all of them (160 MB on disk, gigabytes in memory) to use
+# one. ``split_legacy_cache`` converts a v4 cache.
+CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION = 5
 CLOSER_NEIGHBORS_GRAPH_KEY = "closer_neighbors"
 SCHOOL_GEOMETRY_DISTANCES_GRAPH_KEY = "school_geometry_distances_miles"
 METERS_PER_MILE = 1609.344
@@ -78,12 +81,12 @@ class CloserNeighborArtifactStore:
     def for_graph(self, level, G: nx.Graph) -> CloserNeighborData:
         """Return the exact geometry relation for one graph variant."""
         level = LevelSpec.parse(level)
-        path = self.cache_path(level)
         graph_fingerprint = graph_geometry_fingerprint(G)
         source_fingerprint = self._source_fingerprint()
         fingerprint = hashlib.sha256(
             f"{graph_fingerprint}:{source_fingerprint}".encode("ascii")
         ).hexdigest()[:20]
+        path = self.cache_path(level, fingerprint)
         memory_key = (path, fingerprint)
         if memory_key in self._memory_cache:
             return self._memory_cache[memory_key]
@@ -115,10 +118,22 @@ class CloserNeighborArtifactStore:
         self._memory_cache[memory_key] = data
         return data
 
-    def cache_path(self, level) -> Path:
-        """Return the shared v3 cache path for a unit/level."""
+    def level_variants(self, level) -> dict:
+        """Every cached variant of a level, by fingerprint (for inspection)."""
         level = LevelSpec.parse(level)
-        return self.cache_dir / f"closer_neighbors_{level.name}.pickle"
+        variants = {}
+        for path in sorted(
+            (self.cache_dir / f"closer_neighbors_{level.name}").glob("*.pickle")
+        ):
+            variants.update(self._read_payload(path, level)["variants"])
+        return variants
+
+    def cache_path(self, level, fingerprint: str) -> Path:
+        """Return the cache file of one graph variant of a level."""
+        level = LevelSpec.parse(level)
+        return (
+            self.cache_dir / f"closer_neighbors_{level.name}" / f"{fingerprint}.pickle"
+        )
 
     def _source_fingerprint(self) -> str:
         roles = [loaders.SCHOOL_ROLE]
@@ -363,3 +378,52 @@ def _exclusive_lock(path: Path):
             yield
         finally:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def split_legacy_cache(cache_root: Path) -> list[Path]:
+    """Write every variant of a v4 cache (one file per level) to the v5 layout.
+
+    Returns the files written; variants already in v5 are left alone. Run it
+    once per cache root (``python -m optimization.data.closer_neighbors
+    --split-legacy <cache root>``) so runs do not rebuild them.
+    """
+    legacy = Path(cache_root) / "closer_neighbors" / "v4"
+    target = (
+        Path(cache_root)
+        / "closer_neighbors"
+        / f"v{CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION}"
+    )
+    written = []
+    for path in sorted(legacy.glob("closer_neighbors_*.pickle")):
+        with path.open("rb") as file:
+            payload = pickle.load(file)
+        level = payload["level"]
+        for fingerprint, variant in payload.get("variants", {}).items():
+            out = target / f"closer_neighbors_{level}" / f"{fingerprint}.pickle"
+            if out.exists():
+                continue
+            out.parent.mkdir(parents=True, exist_ok=True)
+            single = {
+                **{k: v for k, v in payload.items() if k != "variants"},
+                "schema_version": CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION,
+                "variants": {fingerprint: variant},
+            }
+            tmp = out.with_name(f"{out.name}.{os.getpid()}.tmp")
+            with tmp.open("wb") as file:
+                pickle.dump(single, file, protocol=pickle.HIGHEST_PROTOCOL)
+            os.replace(tmp, out)
+            written.append(out)
+        del payload
+    return written
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Closer-neighbor cache tools.")
+    parser.add_argument(
+        "--split-legacy", type=Path, required=True, metavar="CACHE_ROOT"
+    )
+    args = parser.parse_args()
+    files = split_legacy_cache(args.split_legacy)
+    print(f"Wrote {len(files)} variant files.")

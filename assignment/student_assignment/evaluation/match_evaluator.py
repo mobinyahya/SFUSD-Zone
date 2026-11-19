@@ -2561,8 +2561,15 @@ class MatchEvaluator:
             }
         ).reset_index(drop=True)
 
-    def eval_aggregate_metric_reports(self, config_name, *, include_local_metrics=True):
-        """Return citywide and, when requested, local reports for one assignment."""
+    def eval_aggregate_metric_reports(
+        self, config_name, *, include_local_metrics=True, include_area_metrics=True
+    ):
+        """Return citywide and, when requested, local reports for one assignment.
+
+        ``include_area_metrics=False`` leaves the per-ZIP and per-attendance-area
+        reports empty: each recomputes the whole full report once per area,
+        which is nearly all of the evaluation's time.
+        """
         if self._distance_cache is None:
             raise ValueError(
                 "Aggregate assignment metrics require the cached "
@@ -2599,10 +2606,14 @@ class MatchEvaluator:
                     ),
                     "zip_code": self._eval_assignment_full_by_group(
                         "zipcode", "zip_code", metric_columns
-                    ),
+                    )
+                    if include_area_metrics
+                    else pd.DataFrame(columns=["zip_code", *metric_columns]),
                     "attendance_area": self._eval_assignment_full_by_group(
                         "idschoolattendance", "attendance_area", metric_columns
-                    ),
+                    )
+                    if include_area_metrics
+                    else pd.DataFrame(columns=["attendance_area", *metric_columns]),
                 }
             )
         for report in reports.values():

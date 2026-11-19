@@ -7,14 +7,17 @@ import pytest
 
 from assignment.student_assignment.da.da_with_guardrails import DAwithGuards
 from optimization.data.mid import (
+    APPENDED,
+    DESIGNATED,
+    LISTED,
+    LotterySpec,
     MidMarket,
     MidProgram,
     MidType,
-    ReserveSpec,
     require_label_access,
 )
+from optimization.lottery_da import _deferred_acceptance, lottery_outcome
 from optimization.mid_oracle import finite_grid_oracle
-from optimization.reserve_da import _deferred_acceptance, reserve_da_oracle
 
 
 def _market(open_priorities, *, priorities=(0,)) -> MidMarket:
@@ -130,52 +133,100 @@ def test_reserve_da_matches_the_assignment_guardrail_da():
             (fractions > 0).any(axis=1),
             strict,
             np.zeros(1, dtype=np.int64),
+            np.zeros(len(flat), dtype=np.int64),
+            False,
         )
         matched = [prefs[s][r] if r >= 0 else 0 for s, r in enumerate(ranks)]
         assert matched == expected.tolist(), trial
 
 
-def test_reserve_market_result_reads_like_a_mid_match():
-    # Two seats reserved one per class, three class-0 students: one takes the
-    # class-0 seat, the class-1 seat stays open to the next class-0 student,
-    # and the third is unmatched.
-    types = tuple(
-        MidType(
-            0,
-            1,
-            ("10-GE-KG",),
-            (0,),
-            (1.0,),
-            (100,),
-            student_id=str(i),
-            reserve_class=0,
-        )
-        for i in range(3)
-    )
-    market = MidMarket(
-        programs=(MidProgram("10-GE-KG", 10, 2, False, 0, 2),),
+def _lottery_market(types, programs, *, fractions=None, add_aa=False, lotteries=1):
+    return MidMarket(
+        programs=programs,
         types=types,
-        student_count=3,
-        outside_only_student_count=0,
-        utility_student_count=3,
+        student_count=len(types),
+        outside_only_student_count=sum(not t.programs for t in types),
+        utility_student_count=len(types),
         utility_handling="omit_nonpositive",
         policy="test",
-        reserves=ReserveSpec({"10-GE-KG": (0.5, 0.5)}, 2, False, 0),
+        lottery=LotterySpec(
+            fractions=fractions or {},
+            num_classes=2,
+            strict=False,
+            seed=0,
+            lotteries=lotteries,
+            add_aa_schools=add_aa,
+            student_ids=tuple(t.student_id for t in types),
+            program_ids=tuple(sorted(p.program_id for p in programs)),
+        ),
     )
-    result = reserve_da_oracle(market, {0: 0}, 20)
-    assert result.demands == {"10-GE-KG": 2.0}
-    assert sorted(row[0] for row in result.assignment_masses) == [0, 20, 20]
-    assert result.outside_mass == 1.0
-    # finite_grid_oracle hands reserve markets to the DA.
-    assert finite_grid_oracle(market, {0: 0}, 20).demands == result.demands
 
-    strict = MidMarket(
-        **{
-            **market.__dict__,
-            "reserves": ReserveSpec({"10-GE-KG": (0.5, 0.5)}, 2, True, 0),
-        }
+
+def _student(i, programs, kinds, *, node=0, open_priorities=None, tiers=None):
+    return MidType(
+        node=node,
+        count=1,
+        programs=programs,
+        priorities=tiers or (0,) * len(programs),
+        utility_sums=tuple(1.0 / (k + 1) for k in range(len(programs))),
+        scaled_utility_sums=tuple(100 // (k + 1) for k in range(len(programs))),
+        open_priorities=open_priorities or (-1,) * len(programs),
+        student_id=str(i),
+        reserve_class=0,
+        kinds=kinds,
     )
-    assert reserve_da_oracle(strict, {0: 0}, 20).demands == {"10-GE-KG": 1.0}
+
+
+def test_unused_reserved_seats_stay_open_and_designation_happens_in_the_match():
+    # Two GE seats reserved one per class and three class-0 students: one
+    # takes the class-0 seat, the empty class-1 seat stays open to a second,
+    # and the third is designated to the citywide program.
+    programs = (
+        MidProgram("10-GE-KG", 10, 2, False, 0, 2),
+        MidProgram("20-GE-KG", 20, 1, True, None, 0),
+    )
+    types = tuple(
+        _student(i, ("10-GE-KG", "20-GE-KG"), (LISTED, DESIGNATED), tiers=(1, 0))
+        for i in range(3)
+    )
+    market = _lottery_market(
+        types, programs, fractions={"10-GE-KG": (0.5, 0.5)}, lotteries=3
+    )
+    outcome = lottery_outcome(market, {0: 0})
+    assert (outcome.unassigned, outcome.designated) == (0.0, 1.0)
+    with pytest.raises(ValueError, match="lottery_da"):
+        finite_grid_oracle(market, {0: 0}, 20)
+
+
+def test_appended_programs_only_in_zone_and_no_designated_duplicate():
+    # A zoned GE program at node 1, appended for and designated to a student
+    # at node 0 whose sibling opens it.
+    programs = (MidProgram("10-GE-KG", 10, 1, False, 1, 1),)
+    student = _student(
+        0,
+        ("10-GE-KG", "10-GE-KG"),
+        (APPENDED, DESIGNATED),
+        tiers=(5, 0),
+        open_priorities=(-1, 0),
+    )
+    market = _lottery_market((student,), programs, add_aa=True)
+    in_zone = lottery_outcome(market, {0: 0, 1: 0})
+    assert (in_zone.unassigned, in_zone.designated) == (0.0, 0.0)  # appended
+    out_of_zone = lottery_outcome(market, {0: 0, 1: 1})
+    assert (out_of_zone.unassigned, out_of_zone.designated) == (0.0, 1.0)  # sibling
+    closed = _lottery_market(
+        (
+            _student(
+                0,
+                ("10-GE-KG", "10-GE-KG"),
+                (APPENDED, DESIGNATED),
+                tiers=(5, 0),
+            ),
+        ),
+        programs,
+        add_aa=True,
+    )
+    assert lottery_outcome(closed, {0: 0, 1: 1}).unassigned == 1.0
 
 
 def test_matching_policy_must_name_a_policy_and_a_recom_step():
@@ -206,7 +257,8 @@ def test_an_unset_matching_policy_keeps_task_ids():
     manifest = {"sources": "fixed"}
     plain = optimization_config_hash(OptimizationConfig(), source_manifest=manifest)
     seeded = optimization_config_hash(
-        OptimizationConfig(mid_reserve_seed=3), source_manifest=manifest
+        OptimizationConfig(mid_lottery_seed=3, mid_lotteries=2),
+        source_manifest=manifest,
     )
     assert plain == seeded
     policy = optimization_config_hash(

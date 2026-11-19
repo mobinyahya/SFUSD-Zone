@@ -76,7 +76,8 @@ _INTEGERS = {
     "choice_access_completion_limit": 0,
     "dw_recom_samples": 0,
     "mid_lottery_scale": 1,
-    "mid_reserve_seed": 0,
+    "mid_lottery_seed": 0,
+    "mid_lotteries": 1,
     "saa_num_seeds": 1,
     "zoned_transport_workers": 1,
     "stable_cutoff_num_seeds": 1,
@@ -265,10 +266,14 @@ class OptimizationConfig:
     # (restrict-zone, sibling-access, tk-access) and reserves, so a zoning is
     # optimized for the policy it will be matched under. null keeps the
     # status-quo market (status_quo.yaml with the 2013 attendance-area tier).
-    # Read by the ReCom MID scorers and capacity references only.
+    # Read by the ReCom MID scorers and capacity references only; needs
+    # mid_preference_source: stated.
     matching_policy: str | None = None
-    # The lottery a reserve policy's match is drawn from (optimization.reserve_da).
-    mid_reserve_seed: int = 0
+    # A matching_policy market is matched by deferred acceptance on
+    # mid_lotteries MTB lotteries drawn from mid_lottery_seed
+    # (optimization.lottery_da), its outcomes averaged.
+    mid_lotteries: int = 5
+    mid_lottery_seed: int = 0
     mid_transport_bounds: bool = True
     mid_complementary_slackness: bool = False
     mid_complementary_slackness_slack: float | str = "auto"

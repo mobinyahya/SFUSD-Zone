@@ -140,13 +140,11 @@ def finite_grid_oracle(
         raise ValueError("MID lottery scale must be a positive integer.")
     if lottery_scale <= 0:
         raise ValueError("MID lottery scale must be a positive integer.")
-    if market.reserves is not None:
-        # Reserves split a program's seats by class, which least cutoffs on
-        # one seat pool cannot express: the reserve DA matches the market on
-        # one fixed lottery instead, in the same result format.
-        from optimization.reserve_da import reserve_da_oracle
-
-        return reserve_da_oracle(market, zoning, lottery_scale)
+    if market.lottery is not None:
+        raise ValueError(
+            "A matching-policy market is matched by optimization.lottery_da, "
+            "not by least cutoffs."
+        )
 
     upper = _cutoff_upper_bounds(market, lottery_scale)
     programs = market.programs
@@ -264,8 +262,8 @@ def continuum_oracle(
     """Return continuous least cutoffs with unit lottery mass."""
     if tolerance <= 0:
         raise ValueError("MID continuum tolerance must be positive.")
-    if market.reserves is not None:
-        raise ValueError("The continuum oracle does not model reserves.")
+    if market.lottery is not None:
+        raise ValueError("The continuum oracle does not model policy markets.")
     upper = _cutoff_upper_bounds(market, 1.0)
     cutoffs = {program.program_id: 0.0 for program in market.programs}
     program_by_id = market.program_by_id
@@ -329,8 +327,8 @@ def evaluate_cutoffs(
     lottery_scale: float,
 ) -> MidOracleResult:
     """Evaluate supplied cutoffs without changing them."""
-    if market.reserves is not None:
-        raise ValueError("Cutoffs do not describe a reserve market's match.")
+    if market.lottery is not None:
+        raise ValueError("Cutoffs do not describe a policy market's match.")
     return _evaluate(market, zoning, cutoffs, lottery_scale)
 
 
