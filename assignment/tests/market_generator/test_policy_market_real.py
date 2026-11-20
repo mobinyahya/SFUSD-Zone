@@ -235,3 +235,127 @@ def test_policy_market_reproduces_the_simulator(data_name, tmp_path):
                 np.testing.assert_array_equal(
                     getattr(applied, field), own[key], err_msg=f"{label}: {field}"
                 )
+
+
+# -- the utility model -----------------------------------------------------------
+
+
+def _simulate_utility_model(market, iteration, *, shared: bool):
+    """One iteration of the active utility-model policy, as
+    ``_run_single_iteration_of_policy`` runs it."""
+    if shared:
+        market.__dict__.pop("policy_market", None)
+    else:
+        market.policy_market = lambda: None  # the generators' own code
+    market._reset_zones()
+    market.priority_generator = PriorityGenerator(market)
+    market.preference_generator = PreferenceGenerator(market)
+    market._guardrail_setup_cache.clear()
+    zone_policy = market.config["policies"][0]
+    settings = market.config["utility-model"]
+    np.random.seed(market.iteration_seed(market.config["random-seed"], iteration))
+    market.umodel.draw_utility_model_randomness(
+        iteration,
+        rows_to_keep=market.students.only_keep_rows,
+        cols_to_keep=market.programs.only_keep_cols,
+        gumbel_scale=settings.get("gumbel-scale", 1.0),
+        outside_option=settings["list-length"] == pm.OUTSIDE_OPTION_LIST_LENGTH,
+    )
+    market.priority_generator.generate_base_priorities(zone_policy)
+    prefs = market.preference_generator.get_utility_model_preferences_after_truncation()
+    pref_length = np.asarray(market.preference_generator.pref_length).copy()
+    policy = market._policy_data_options(zone_policy)[0]
+    priorities = market.priority_generator.set_policy_specific_priorities(
+        policy, prefs, iteration=iteration
+    )
+    if market.config["guard-rails"] != -1:
+        match = market._generate_assignment_with_guardrails(prefs, priorities)
+    else:
+        match = market._generate_assignment(prefs, priorities)
+    market.__dict__.pop("policy_market", None)
+    return {
+        "prefs": prefs,
+        "pref_length": pref_length,
+        "priorities": priorities,
+        "match": match[0],
+        "rank": match[1],
+    }
+
+
+@pytest.mark.real_data
+@pytest.mark.parametrize(
+    "utility_model",
+    [
+        {"enable": True, "list-length": "7"},
+        {"enable": True, "list-length": "outside_option"},
+        {
+            "enable": True,
+            "list-length": "3",
+            "gumbel-scale": 0.5,
+            "designate-lp-for-all": True,
+        },
+    ],
+    ids=["seven", "outside_option", "three_lp_for_all"],
+)
+def test_policy_market_reproduces_the_simulators_utility_model(utility_model, tmp_path):
+    """The utility model's lists, priorities and match, through the shared
+    market and through the generators' own code, on today's attendance areas
+    and on paired ones, are identical."""
+    from assignment.student_assignment.market_generator.school_choice_market import (
+        load_market_data,
+    )
+    from assignment.student_assignment.market_generator.school_choice_market_generator import (
+        MarketGenerator,
+    )
+    from loaders.config import load_scenario
+
+    from .utility_estimate import estimate_source, write_covering_estimate
+
+    data = _data(DATA["nov13_applied_or_enrolled"])
+    try:
+        scenario = load_scenario(data)
+        programs, _, students = load_market_data(scenario)
+        estimate = write_covering_estimate(
+            scenario, programs, students, tmp_path / "estimate.csv"
+        )
+        data["overrides"]["sources"] = {
+            "assignment.estimate": estimate_source(estimate)
+        }
+        base = load_custom_config(
+            CONFIG, assignment_folder=tmp_path, absolute_assignment_folder=True
+        )
+        base["data"] = data
+        base["utility-model"] = utility_model
+        configs = {"attendance_areas": _attendance_area_configs(base)}
+        market = MarketGenerator(
+            config=configs["attendance_areas"][POLICIES[0]],
+            assignment_path=str(tmp_path),
+            write_config=False,
+            write_aggregate_metrics=False,
+        )
+    except FileNotFoundError as error:
+        pytest.skip(f"real data not available: {error}")
+
+    zone_file = _paired_zone_file(market, tmp_path / "paired_zones.csv")
+    target = {
+        "id": "paired",
+        "zone_file": str(zone_file),
+        "zone_building_blocks": "block",
+        "data": data,
+    }
+    _, resolved = resolve_generated_zone_batch_config(
+        base, [target], assignment_folder=tmp_path
+    )
+    configs["paired_areas"] = {entry["policy"]: entry["config"] for entry in resolved}
+
+    for zoning, by_policy in configs.items():
+        for policy in ("restrictive_aa_sib_ctip_reserves", "restrictive_aa_sib_no_ctip"):
+            label = f"{zoning}/{policy}"
+            market.reconfigure(by_policy[policy], str(tmp_path), write_config=False)
+            assert market.config["utility-model"]["enable"] is True, label
+            assert not pm.unmodelled_policy_settings(market.config, "simulator"), label
+            assert market.policy_market().utility is not None, label
+            for iteration in (0, 3):
+                own = _simulate_utility_model(market, iteration, shared=False)
+                shared = _simulate_utility_model(market, iteration, shared=True)
+                _assert_identical(shared, own, f"{label}/{iteration}")

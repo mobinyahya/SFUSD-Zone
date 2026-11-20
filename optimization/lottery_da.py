@@ -29,6 +29,14 @@ outcomes:
 Designation happens inside the match, as in the simulator: a student is
 *designated* when placed through a designation candidate and *unassigned*
 when placed nowhere.
+
+A policy with the utility model (``utility-model.enable``) gives every
+student a list per lottery (``LotterySpec.lists``), drawn as the simulator
+draws its iteration ``mid_lottery_seed + l``, lottery numbers included. Two
+more things then depend on the zoning, and the match settles them before it
+starts: the list keeps only its first ``budget`` *eligible* listed programs
+(those the zoning lets the student enter), and an appended or designated
+program the zoning leaves on that list is the duplicate the simulator drops.
 """
 
 from __future__ import annotations
@@ -38,7 +46,7 @@ from collections import defaultdict
 import numba
 import numpy as np
 
-from optimization.data.mid import DESIGNATED, MidMarket
+from optimization.data.mid import DESIGNATED, UNLIMITED_BUDGET, MidMarket
 
 _PREPARED: dict[int, tuple[MidMarket, "_Prepared"]] = {}
 
@@ -81,6 +89,35 @@ class _Prepared:
         self.node = np.array([t.node for t in types], dtype=np.int64)
         self.student_class = np.array([t.reserve_class for t in types], dtype=np.int64)
         self.frl = np.array([t.frl_sum for t in types], dtype=np.float64)
+        self.lists = spec.lists is not None
+        if self.lists:
+            self._flatten_lists(market, index)
+        else:
+            self._flatten_types(market, index)
+        self.max_node = int(
+            max(int(self.node.max(initial=-1)), int(self.school_node.max(initial=-1)))
+        )
+        # Outcome bookkeeping: each program's school, and zoned GE seats.
+        school_ids = sorted({p.school_id for p in programs})
+        school_index = {school: i for i, school in enumerate(school_ids)}
+        self.school_ids = school_ids
+        self.program_school = np.array(
+            [school_index[p.school_id] for p in programs], dtype=np.int64
+        )
+        self.zoned_ge = np.array(
+            [
+                (not p.citywide)
+                and p.school_node is not None
+                and str(p.program_id).split("-")[1:2] == ["GE"]
+                for p in programs
+            ],
+            dtype=np.bool_,
+        )
+
+    def _flatten_types(self, market: MidMarket, index) -> None:
+        """One fixed list per student, one lottery draw per alternative."""
+        spec = market.lottery
+        types = market.types
         lengths = [len(t.programs) for t in types]
         self.start = np.zeros(len(types) + 1, dtype=np.int64)
         np.cumsum(lengths, out=self.start[1:])
@@ -113,25 +150,66 @@ class _Prepared:
             rng = np.random.default_rng([spec.seed, lottery])
             full = rng.random((len(spec.student_ids), len(spec.program_ids)))
             self.draws[lottery] = full[rows, cols]
-        self.max_node = int(
-            max(int(self.node.max(initial=-1)), int(self.school_node.max(initial=-1)))
+        # Every lottery reads the same lists, uncapped and without duplicates.
+        self.starts = self.start[None, :]
+        self.copy = np.full(len(flat_programs), -1, dtype=np.int64)
+        self.budget = np.full(len(types), UNLIMITED_BUDGET, dtype=np.int64)
+
+    def _flatten_lists(self, market: MidMarket, index) -> None:
+        """Per-lottery lists (``LotteryLists``), rows gathered in type order."""
+        spec = market.lottery
+        lists = spec.lists
+        n = len(lists.student_ids)
+        row_of = {sid: i for i, sid in enumerate(lists.student_ids)}
+        rows = np.array([row_of[t.student_id] for t in market.types], dtype=np.int64)
+        segments = lists.segments
+        lotteries = lists.lotteries
+        types = len(rows)
+        picked = (np.arange(lotteries)[:, None] * n + rows[None, :]).ravel()
+        lengths = segments[picked + 1] - segments[picked]
+        offsets = np.zeros(len(picked) + 1, dtype=np.int64)
+        np.cumsum(lengths, out=offsets[1:])
+        gather = np.repeat(segments[picked] - offsets[:-1], lengths) + np.arange(
+            offsets[-1]
         )
-        # Outcome bookkeeping: each program's school, and zoned GE seats.
-        school_ids = sorted({p.school_id for p in programs})
-        school_index = {school: i for i, school in enumerate(school_ids)}
-        self.school_ids = school_ids
-        self.program_school = np.array(
-            [school_index[p.school_id] for p in programs], dtype=np.int64
+        # Absolute offsets of each lottery's rows, in type order.
+        self.starts = np.zeros((lotteries, types + 1), dtype=np.int64)
+        for lottery in range(lotteries):
+            self.starts[lottery] = offsets[lottery * types : (lottery + 1) * types + 1]
+        self.start = (
+            self.starts[0] if lotteries else np.zeros(types + 1, dtype=np.int64)
         )
-        self.zoned_ge = np.array(
-            [
-                (not p.citywide)
-                and p.school_node is not None
-                and str(p.program_id).split("-")[1:2] == ["GE"]
-                for p in programs
-            ],
-            dtype=np.bool_,
+        to_market = np.array(
+            [index.get(program_id, -1) for program_id in spec.program_ids],
+            dtype=np.int64,
         )
+        alternative = to_market[lists.program[gather]]
+        if np.any(alternative < 0):
+            raise ValueError("A lottery list names a program the market dropped.")
+        self.alternative = alternative
+        self.tier = lists.tier[gather].astype(np.float64)
+        self.open_tier = lists.open_tier[gather].astype(np.float64)
+        self.kind = lists.kind[gather].astype(np.int64)
+        self.copy = lists.copy[gather].astype(np.int64)
+        self.utility = lists.utility[gather].astype(np.float64)
+        self.draws = lists.draw[gather].astype(np.float64)
+        self.budget = lists.budget[rows].astype(np.int64)
+
+    def lottery_inputs(self, lottery: int, draws=None):
+        """``(start, draw)`` of one lottery."""
+        if self.lists:
+            if draws is not None:
+                raise ValueError(
+                    "A utility-model market draws its own lotteries with its lists."
+                )
+            return self.starts[lottery], self.draws
+        draw = self.draws[lottery] if draws is None else draws[lottery]
+        return self.start, draw
+
+    def lottery_count(self, draws=None) -> int:
+        if draws is not None:
+            return int(np.asarray(draws).shape[0])
+        return int(self.starts.shape[0]) if self.lists else int(self.draws.shape[0])
 
 
 def _prepared(market: MidMarket) -> _Prepared:
@@ -213,15 +291,38 @@ def _deferred_acceptance(
     zone_of_node,
     kind,
     skip_designation_in_zone,
+    copy,
+    budget,
 ):
     """Return each student's matched rank (-1: unmatched).
 
     kind and skip_designation_in_zone select which alternatives the
-    zoning allows (see lottery_market_access).
+    zoning allows (see lottery_market_access). A listed alternative counts
+    only among the student's first budget eligible ones; an appended or
+    designated one whose listed copy (copy, relative to the student's
+    start; -1 none) counts is the dropped duplicate.
     """
     students = node.shape[0]
     programs = capacity.shape[0]
     classes = pool_capacity.shape[1]
+    # Which listed alternatives this zoning puts on each list.
+    included = np.zeros(alternative.shape[0], dtype=np.bool_)
+    for s in range(students):
+        zone = zone_of_node[node[s]]
+        counted = 0
+        for position in range(start[s], start[s + 1]):
+            if kind[position] != 0:
+                continue
+            if counted >= budget[s]:
+                break
+            p = alternative[position]
+            if citywide[p] or zone == zone_of_node[school_node[p]]:
+                eligible = True
+            else:
+                eligible = open_tier[position] >= 0
+            if eligible:
+                included[position] = True
+                counted += 1
     pools = classes + 1
     # Heap segments: class pools, then the open pool, of each program; each
     # segment holds at most the program's capacity.
@@ -259,6 +360,13 @@ def _deferred_acceptance(
             if position >= start[s + 1]:
                 break
             p = alternative[position]
+            if kind[position] == 0:
+                if not included[position]:
+                    rank[s] = r + 1
+                    continue
+            elif copy[position] >= 0 and included[start[s] + copy[position]]:
+                rank[s] = r + 1
+                continue
             if citywide[p]:
                 priority = tier[position]
             elif zone == zone_of_node[school_node[p]]:
@@ -359,15 +467,18 @@ def lottery_ranks(market: MidMarket, zoning, draws=None) -> np.ndarray:
     for node, zone in zoning.items():
         if 0 <= int(node) <= prepared.max_node:
             zone_of_node[int(node)] = int(zone)
-    draws = prepared.draws if draws is None else np.asarray(draws, dtype=np.float64)
-    ranks = np.empty((draws.shape[0], len(prepared.node)), dtype=np.int64)
-    for lottery in range(draws.shape[0]):
+    if draws is not None:
+        draws = np.asarray(draws, dtype=np.float64)
+    lotteries = prepared.lottery_count(draws)
+    ranks = np.empty((lotteries, len(prepared.node)), dtype=np.int64)
+    for lottery in range(lotteries):
+        start, draw = prepared.lottery_inputs(lottery, draws)
         ranks[lottery] = _deferred_acceptance(
-            prepared.start,
+            start,
             prepared.alternative,
             prepared.tier,
             prepared.open_tier,
-            draws[lottery],
+            draw,
             prepared.node,
             prepared.student_class,
             prepared.capacity,
@@ -379,6 +490,8 @@ def lottery_ranks(market: MidMarket, zoning, draws=None) -> np.ndarray:
             zone_of_node,
             prepared.kind,
             prepared.skip_designation_in_zone,
+            prepared.copy,
+            prepared.budget,
         )
     return ranks
 
@@ -388,7 +501,7 @@ def lottery_placements(market: MidMarket, zoning, draws=None):
     market.programs) and alternative kind, both -1 when unmatched."""
     prepared = _prepared(market)
     ranks = lottery_ranks(market, zoning, draws)
-    positions = prepared.start[:-1][None, :] + ranks
+    positions = prepared.starts[:, :-1] + ranks
     matched = ranks >= 0
     safe = np.where(matched, positions, 0)
     program = np.where(matched, prepared.alternative[safe], -1)

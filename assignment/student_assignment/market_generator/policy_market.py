@@ -27,12 +27,20 @@ student's selected round, ``add_aa_schools``, ``designate`` with the
 ``in_zone`` designation ordering, the policy priorities of any grade, zone
 eligibility exceptions (``restrict-zone``, ``sibling-access``, ``tk-access``,
 ``CTIP_access``) and the round and non-designation boosts.
+
+With ``utility-model.enable: true`` the lists are drawn instead, one set per
+lottery: :meth:`PolicyMarket.utility_draws` replays the simulator's random
+stream for one iteration (the Gumbel utility draws, the outside-option draw,
+then the MTB lottery), and :meth:`PolicyMarket.utility_preferences` truncates
+and completes the lists as
+``PreferenceGenerator.get_utility_model_preferences_after_truncation`` does.
 """
 
 from __future__ import annotations
 
 import copy
 import fcntl
+import hashlib
 import json
 import os
 from collections import OrderedDict
@@ -68,6 +76,17 @@ POLICY_MARKET_SETTINGS: dict[str, Any] = {
     "citywide-reserve-ratios": [0.57, 0.43],
     "citywide-separate-reserves": True,
 }
+
+#: ``utility-model.list-length`` that ranks exactly the programs a student's
+#: drawn utility puts above their drawn outside option. The estimate must be
+#: utility net of the outside option (e.g. ``ChoiceModel_2526_outside``).
+OUTSIDE_OPTION_LIST_LENGTH = "outside_option"
+
+#: The ``utility-model`` keys the shared path models. ``save-path`` only writes
+#: the first iteration's utilities to a file.
+UTILITY_MODEL_KEYS = frozenset(
+    {"enable", "list-length", "gumbel-scale", "designate-lp-for-all", "save-path"}
+)
 
 #: Geography columns kept for the MID market (``choice.estimate.student_area_column``).
 STUDENT_AREA_COLUMNS = (
@@ -177,6 +196,56 @@ def _reserve_settings(value, config) -> bool:
     return isinstance(fraction, list | tuple) and len(fraction) > 0
 
 
+def utility_model_enabled(config: Mapping) -> bool:
+    """Whether ``config`` draws its lists from the utility model.
+
+    ``enable`` unset (``None``, as ``base_config`` leaves it) or false means
+    the submitted lists.
+    """
+    value = config.get("utility-model")
+    return isinstance(value, Mapping) and value.get("enable") is True
+
+
+def utility_list_length(value) -> int | None:
+    """``list-length`` as a count, or ``None`` for the outside option.
+
+    Raises for any other value: only a whole number of programs (a digit
+    string, as the simulator's schema types it) and the outside option are
+    modelled.
+    """
+    if value == OUTSIDE_OPTION_LIST_LENGTH:
+        return None
+    if isinstance(value, str) and value.isascii() and value.isdigit():
+        return int(value)
+    raise ValueError(
+        f"utility-model list-length {value!r} is not modelled; use a whole "
+        f"number such as '7' or {OUTSIDE_OPTION_LIST_LENGTH!r}."
+    )
+
+
+def _utility_model(value, config) -> bool:
+    if value is _ABSENT or value is None:
+        return True
+    if not isinstance(value, Mapping):
+        return False
+    enable = value.get("enable")
+    if enable is None or enable is False:
+        return True
+    if enable is not True or not set(value) <= UTILITY_MODEL_KEYS:
+        return False
+    utility_list_length(value.get("list-length"))
+    scale = value.get("gumbel-scale", 1.0)
+    if isinstance(scale, bool) or not isinstance(scale, int | float):
+        return False
+    if not np.isfinite(scale) or scale < 0:
+        return False
+    if not isinstance(value.get("designate-lp-for-all", False), bool):
+        return False
+    # Without designation the simulator leaves its appended programs
+    # unfiltered; only the designating path is modelled.
+    return config.get("designate") is True
+
+
 def _one_of(*values):
     def check(value, config) -> bool:
         return value is _ABSENT or any(
@@ -197,9 +266,12 @@ def _always(value, config) -> bool:
 _SHARED_WHITELIST: dict[str, tuple[str, Callable]] = {
     "assignment-algorithm": ("absent or 'DA'", _one_of("DA", None)),
     "utility-model": (
-        "enable false (the submitted lists)",
-        lambda value, config: value is _ABSENT
-        or not (value or {}).get("enable", False),
+        "absent, enable unset or false (the submitted lists), or enable true "
+        f"with list-length a whole number or {OUTSIDE_OPTION_LIST_LENGTH!r}, "
+        "gumbel-scale a finite non-negative number, designate-lp-for-all true "
+        f"or false, no keys beyond {sorted(UTILITY_MODEL_KEYS)}, and designate: "
+        "true",
+        _utility_model,
     ),
     "ties-options": (
         "['MTB']",
@@ -321,6 +393,15 @@ def policy_market_settings(config: Mapping) -> dict[str, Any]:
         ):
             raise ValueError(f"A policy market needs {name!r} in the policy config.")
         settings[name] = copy.deepcopy(value)
+    # The utility model adds the base utility matrix and, with
+    # designate-lp-for-all, changes the designation order. Only an enabled one
+    # keys the market, so every submitted-list market keeps its cache key.
+    if utility_model_enabled(config):
+        settings["utility-model"] = {
+            "designate-lp-for-all": bool(
+                config["utility-model"].get("designate-lp-for-all", False)
+            )
+        }
     # Reserve settings matter only with reserves; dropping them otherwise lets
     # a policy with and without unused reserve settings share one market.
     if int(settings["guard-rails"]) == -1:
@@ -335,6 +416,33 @@ def policy_market_settings(config: Mapping) -> dict[str, Any]:
 def ctip_key(ctip) -> str:
     """The key of one ``ctip-options`` entry in :attr:`PolicyMarket.tiers`."""
     return json.dumps(ctip, sort_keys=True)
+
+
+def iteration_seed(base_seed: int, iteration: int) -> int:
+    """``MarketGenerator.iteration_seed``: the NumPy seed of one iteration.
+
+    Repeated here so the optimizer need not import the simulator's generator;
+    ``test_policy_market`` checks the two agree.
+    """
+    if isinstance(iteration, bool) or not isinstance(iteration, int) or iteration < 0:
+        raise ValueError("Assignment iteration must be a non-negative integer.")
+    payload = f"sfusd-assignment-v1:{int(base_seed)}:{iteration}".encode("ascii")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:4], "big")
+
+
+@dataclass(frozen=True, eq=False)
+class UtilityDraw:
+    """One iteration's random draws, in the simulator's order.
+
+    ``utilities`` is ``mus`` plus the Gumbel draws
+    (``UtilityModel.original_utilities``), ``outside`` the outside-option
+    draws (``None`` without the outside option), and ``lottery`` the MTB
+    lottery ``PriorityGenerator._mtb`` draws next from the same stream.
+    """
+
+    utilities: np.ndarray
+    outside: np.ndarray | None
+    lottery: np.ndarray
 
 
 # -- shared priority arithmetic ------------------------------------------------
@@ -484,6 +592,11 @@ class PolicyMarket:
     num_classes: int
     strict_reserves: bool
     reserve_fractions: dict[str, tuple[float, ...]] | None
+    #: (n, p) the utility model's base utilities (``UtilityModel`` ``mus``),
+    #: when the policy enables it; ``None`` otherwise. A default, so markets
+    #: pickled before the field existed (all of them submitted-list ones) load
+    #: with ``None``.
+    utility: np.ndarray | None = None
 
     @property
     def n(self) -> int:
@@ -549,21 +662,25 @@ class PolicyMarket:
         self,
         eligibility: np.ndarray,
         appended: list[np.ndarray] | None,
+        selected: np.ndarray | None = None,
+        dtype=float,
     ) -> tuple[np.ndarray, np.ndarray]:
         """``initialize_real_preferences(designate=True)``: ``(prefs, pref_length)``.
 
-        Each list is the submitted programs, then ``appended`` (``None``: no
-        ``add_aa_schools``), then the designation order; only programs the
-        student qualifies for and is zone-eligible for are kept.
-        ``pref_length`` counts the kept submitted and appended programs.
+        Each list is the submitted programs (or ``selected``, 0-padded
+        program indices), then ``appended`` (``None``: no ``add_aa_schools``),
+        then the designation order; only programs the student qualifies for
+        and is zone-eligible for are kept. ``pref_length`` counts the kept
+        submitted and appended programs.
         """
         n, width = self.n, self.num_programs
         eligible = self.qualifies & (np.asarray(eligibility) > 0)
-        prefs = np.zeros((n, width))
+        selected = self.selected if selected is None else np.asarray(selected)
+        prefs = np.zeros((n, width), dtype=dtype)
         pref_length = np.zeros(n, dtype=int)
-        lengths = np.count_nonzero(self.selected, axis=1)
+        lengths = np.count_nonzero(selected, axis=1)
         for i in range(n):
-            row = self.selected[i]
+            row = selected[i]
             extra = None if appended is None else appended[i]
             if extra is not None and len(extra):
                 row = row.copy()
@@ -588,6 +705,89 @@ class PolicyMarket:
 
     def round_priorities(self) -> np.ndarray:
         return np.outer(self.round_boost, np.ones(self.num_programs))
+
+    # -- the utility model -----------------------------------------------------
+
+    def utility_draws(
+        self,
+        iteration: int,
+        random_seed: int,
+        *,
+        gumbel_scale: float = 1.0,
+        outside_option: bool = False,
+    ) -> UtilityDraw:
+        """The draws the simulator makes in one iteration of a utility-model policy.
+
+        ``_run_single_iteration_of_policy`` seeds NumPy with
+        ``iteration_seed(random_seed, iteration)``, draws the Gumbel utility
+        noise and then, with the outside option, its draw
+        (``UtilityModel.draw_utility_model_randomness``); nothing else draws
+        before ``PriorityGenerator._mtb`` takes the MTB lottery. A private
+        ``RandomState`` seeded alike gives the same numbers in that order.
+        """
+        if self.utility is None:
+            raise ValueError("This policy market was built without the utility model.")
+        if not np.isfinite(gumbel_scale) or gumbel_scale < 0:
+            raise ValueError("gumbel_scale must be a finite non-negative number.")
+        rng = np.random.RandomState(iteration_seed(random_seed, iteration))
+        mus = self.utility
+        n, p = mus.shape
+        if gumbel_scale == 0:
+            utilities = mus.copy()
+        else:
+            utilities = np.array(mus + rng.gumbel(0, gumbel_scale, (n, p)))
+        outside = None
+        if outside_option:
+            outside = np.zeros(n) if gumbel_scale == 0 else rng.gumbel(0, gumbel_scale, n)
+        lottery = rng.rand(n, self.num_programs)
+        return UtilityDraw(utilities, outside, lottery)
+
+    def truncated_utility_lists(
+        self,
+        eligible: np.ndarray,
+        utilities: np.ndarray,
+        outside: np.ndarray | None,
+        list_length: int | None,
+    ) -> np.ndarray:
+        """``PreferenceGenerator._truncate_utility_model_preferences``.
+
+        Each student's eligible programs by drawn utility, best first, cut to
+        ``list_length`` (``None``: those drawn above the outside option).
+        ``eligible`` is program-type and zone eligibility.
+        """
+        eligible = np.asarray(eligible).astype(bool)
+        order = np.argsort(-utilities, axis=1) + 1
+        if list_length is None:
+            if outside is None:
+                raise ValueError("The outside-option list length needs its draw.")
+            ranked = np.count_nonzero(eligible & (utilities > outside[:, None]), axis=1)
+        else:
+            ranked = np.full(self.n, list_length)
+        ranked = np.minimum(ranked, eligible.sum(axis=1)).astype(int)
+        kept = np.take_along_axis(eligible, order - 1, axis=1)
+        position = np.cumsum(kept, axis=1)
+        kept &= position <= ranked[:, None]
+        truncated = np.zeros_like(order)
+        rows, columns = np.nonzero(kept)
+        truncated[rows, position[rows, columns] - 1] = order[rows, columns]
+        return truncated
+
+    def utility_preferences(
+        self,
+        eligibility: np.ndarray,
+        appended: list[np.ndarray] | None,
+        utilities: np.ndarray,
+        outside: np.ndarray | None,
+        list_length: int | None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """``get_utility_model_preferences_after_truncation`` with designation:
+        ``(prefs, pref_length)``, the truncated drawn lists completed as
+        :meth:`preferences` completes the submitted ones."""
+        eligible = self.qualifies & (np.asarray(eligibility) > 0)
+        truncated = self.truncated_utility_lists(
+            eligible, utilities, outside, list_length
+        )
+        return self.preferences(eligibility, appended, truncated, dtype=truncated.dtype)
 
     def apply(
         self,
@@ -754,6 +954,10 @@ def build_policy_market(
     ge_index = np.array([index_of[c] for c in ge_columns], dtype=np.int32)
     lp_type = np.array([c.split("-")[1] for c in lp_columns], dtype=object)
     language_designation = students.language_designation.to_numpy()
+    utility_settings = config.get("utility-model")
+    if utility_settings is not None and utility_settings["designate-lp-for-all"]:
+        # The simulator designates language programs for everyone then.
+        language_designation = np.ones(n, dtype=bool)
     program_types = frame["program_types"].to_numpy()
     rows = []
     for row in range(n):
@@ -797,6 +1001,14 @@ def build_policy_market(
     classes, num_classes, strict, fractions = _reserves(
         config, frame, programs.program_df, schools.citywide_schools
     )
+    utility = None
+    if utility_settings is not None:
+        from .utility_model import UtilityModel
+
+        utility = UtilityModel(
+            data_scenario.source("assignment.estimate").path, programs, students
+        )._load_base_utility_matrix(students.only_keep_rows, programs.only_keep_cols)
+        utility = np.asarray(utility, dtype=float)
     return PolicyMarket(
         settings=dict(settings),
         grade=grade,
@@ -819,6 +1031,7 @@ def build_policy_market(
         num_classes=num_classes,
         strict_reserves=strict,
         reserve_fractions=fractions,
+        utility=utility,
     )
 
 
@@ -962,12 +1175,15 @@ def clear_policy_market_memo() -> None:
 
 
 __all__ = [
+    "OUTSIDE_OPTION_LIST_LENGTH",
     "POLICY_MARKET_SCHEMA_VERSION",
     "POLICY_MARKET_SETTINGS",
     "AppliedPolicyMarket",
+    "UtilityDraw",
     "PolicyMarket",
     "build_policy_market",
     "ctip_key",
+    "iteration_seed",
     "distance_orderings",
     "load_policy_market",
     "not_designation_mask",
@@ -977,4 +1193,6 @@ __all__ = [
     "program_type_eligibility",
     "policy_market_whitelist",
     "unmodelled_policy_settings",
+    "utility_list_length",
+    "utility_model_enabled",
 ]

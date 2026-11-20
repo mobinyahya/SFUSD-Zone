@@ -2,17 +2,15 @@ import numpy as np
 import pandas as pd
 
 from .policy_market import (
+    OUTSIDE_OPTION_LIST_LENGTH,
     distance_orderings,
     policy_market_zone_eligibility,
     program_type_eligibility,
+    utility_list_length,
     zones_are_set,
 )
 
-
-#: ``utility-model.list-length`` that ranks exactly the programs a student's
-#: drawn utility puts above their drawn outside option. The estimate must be
-#: utility net of the outside option (e.g. ``ChoiceModel_2526_outside``).
-OUTSIDE_OPTION_LIST_LENGTH = "outside_option"
+__all__ = ["OUTSIDE_OPTION_LIST_LENGTH", "PreferenceGenerator"]
 
 
 class PreferenceGenerator:
@@ -103,19 +101,35 @@ class PreferenceGenerator:
         return policy_market()
 
     def _policy_market_preferences(self, policy_market, add_aa_schools: bool):
-        zones = self.market.zones
         eligibility = policy_market_zone_eligibility(self.market, policy_market)
-        appended = None
-        if add_aa_schools:
-            appended = policy_market.appended_programs(
-                zones.zone_priority_matrix,
-                generated_zones=self.market.config.get(
-                    "zone-building-blocks", "attendance_area"
-                )
-                != "attendance_area",
-                citywide_program_ids=getattr(zones, "citywide_program_ids", []),
-            )
+        appended = self._appended_programs(policy_market, add_aa_schools)
         prefs, self.pref_length = policy_market.preferences(eligibility, appended)
+        return prefs
+
+    def _appended_programs(self, policy_market, add_aa_schools: bool):
+        if not add_aa_schools:
+            return None
+        zones = self.market.zones
+        return policy_market.appended_programs(
+            zones.zone_priority_matrix,
+            generated_zones=self.market.config.get(
+                "zone-building-blocks", "attendance_area"
+            )
+            != "attendance_area",
+            citywide_program_ids=getattr(zones, "citywide_program_ids", []),
+        )
+
+    def _policy_market_utility_preferences(self, policy_market):
+        umodel = self.market.umodel
+        prefs, self.pref_length = policy_market.utility_preferences(
+            policy_market_zone_eligibility(self.market, policy_market),
+            self._appended_programs(
+                policy_market, self.market.config.get("add_aa_schools", False)
+            ),
+            umodel.original_utilities,
+            umodel.outside_utilities,
+            utility_list_length(self.market.config["utility-model"].get("list-length")),
+        )
         return prefs
 
     def _collapse_to_attendance_area_ge(self, prefs: np.ndarray) -> np.ndarray:
@@ -658,6 +672,14 @@ class PreferenceGenerator:
             np.ndarray: A (num students) by (num programs) matrix, where the appropriate number
                 of programs are listed after removing ineligible programs.
         """
+        policy_market = (
+            self._policy_market() if self.market.config["designate"] else None
+        )
+        if policy_market is not None:
+            # Shared path: the zoning-independent market, under this zoning,
+            # on this iteration's draws.
+            return self._policy_market_utility_preferences(policy_market)
+
         eligible = self._get_eligibility()
         aa_or_citywide_eligible = None
         remove_non_aa_or_citywide = self.market.config.get(
