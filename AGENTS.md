@@ -235,12 +235,19 @@ end-of-allocation aggregation rebuilds the sweep's
 reports. A plan is at most 12 jobs (40 CPUs, `--mem-per-cpu=4G`), with no
 downstream assignment graph. With `skip_existing`, a run optimized but
 unmatched is planned for its matching alone. The allocations claim tasks from
-one shared queue (plan schema 6) via `O_EXCL` claim files in
-`<output_dir>/.slurm/claims/`. Tasks are claimed longest first, with tasks
-sharing a policy market kept together. Stale claims are recovered by `squeue`
-and by heartbeat. Each allocation warms its first wave's datasets once
-(`benchmark/warmup.py`) before the fan-out. Each phase records its timings and
-peak RSS in the run's `phase_timings.json`. See `benchmark/README.md`. The local `benchmark.run` path still matches
+one shared queue (plan schema 7) via `O_EXCL` claim files in
+`<output_dir>/.slurm/claims/`. A task is claimed only when a slot is free to
+start it. Tasks are claimed longest first, with tasks sharing a policy market
+kept together. A claim whose process has not started within 10 min is
+released for other allocations (a node-local start token stops the late
+process from running it too). Stale claims are recovered by heartbeat and by
+`squeue`, which each recovery check re-reads at most once a minute. An idle
+allocation waits up to 30 min before exiting while any claim is unstarted or
+belongs to a job squeue no longer lists. Each allocation peeks at its first
+tasks, without claiming them, and warms their datasets once
+(`benchmark/warmup.py`). Phase processes fork from a `forkserver` that
+preloads the environment once per allocation. Each phase records its timings
+and peak RSS in the run's `phase_timings.json`. See `benchmark/README.md`. The local `benchmark.run` path still matches
 the whole sweep at once into `<assignment_dir>/`.
 
 `optimization/run_archive.py` owns the archive: area ids are stored once per

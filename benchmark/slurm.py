@@ -14,12 +14,13 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
 import tempfile
 import time
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 import warnings
 
 from benchmark.config import (
@@ -59,7 +60,10 @@ from benchmark.warmup import (
 # 5: matching runs inside the optimization allocations; no assignment plan.
 # 6: tasks are in claim order and every allocation of a worker count claims
 #    from that count's one shared queue (claim files), not a fixed chunk.
-PLAN_SCHEMA_VERSION = 6
+# 7: tasks are claimed one at a time as slots free; a claim records whether
+#    its task's process started (``started``, ``claimed_epoch``) and can be
+#    ``released`` by its allocation.
+PLAN_SCHEMA_VERSION = 7
 MAX_CPUS_PER_NODE = 40
 #: The partition's per-user job limit. Every job a plan submits is an
 #: optimization allocation: each task is optimized, evaluated, and matched
@@ -87,11 +91,57 @@ CLAIM_HEARTBEAT_SECONDS = 60.0
 STALE_CLAIM_SECONDS = 15 * 60.0
 #: How often an allocation with an empty queue rechecks others' claims.
 CLAIM_RECOVERY_SECONDS = 5 * 60.0
+#: A task process that has not reported its start this long after its
+#: allocation claimed (or continued) the task has its claim released, so a
+#: stalled node does not sit on work a healthy one could run.
+PHASE_START_TIMEOUT_SECONDS = 10 * 60.0
+#: How often the allocation loop wakes to check starts and heartbeats.
+POLL_SECONDS = 15.0
+#: How often an idle allocation rechecks claims another allocation may yet
+#: release (not started) or whose job is gone, before it exits.
+IDLE_POLL_SECONDS = 30.0
+#: The longest an idle allocation waits on such claims before exiting. Each
+#: one is resolved sooner: released by its owner within
+#: PHASE_START_TIMEOUT_SECONDS, stale at the next squeue read after its job
+#: died, or stale by heartbeat within STALE_CLAIM_SECONDS.
+EXIT_WAIT_LIMIT_SECONDS = 30 * 60.0
+#: At most one squeue read per allocation this often (recovery checks).
+LIVE_JOBS_REFRESH_SECONDS = 60.0
 #: Delay between the first-wave task processes' starts, so 40 processes do
 #: not open the same files on NFS in the same instant.
 WORKER_START_STAGGER_SECONDS = 1.0
 #: Set to ``0`` to skip the allocation's cache warm-up.
 WARM_ENVIRONMENT = "BENCHMARK_SLURM_WARM"
+#: The phase processes' start method: ``forkserver`` (default) or ``spawn``.
+START_METHOD_ENVIRONMENT = "BENCHMARK_SLURM_START_METHOD"
+#: What the forkserver imports once per allocation, so a phase process forks
+#: with the environment loaded instead of importing it from NFS. Only
+#: imports: none of these starts a thread or keeps a file open at import,
+#: except pyproj's PROJ database, which each process reopens
+#: (:func:`init_worker_process`). The numba kernels of
+#: ``optimization.lottery_da`` are imported, not compiled or loaded from
+#: their cache: that happens on first call, in the phase process.
+FORKSERVER_PRELOAD = (
+    "numpy",
+    "scipy",
+    "pandas",
+    "shapely",
+    "pyproj",
+    "geopandas",
+    "networkx",
+    "numba",
+    "ortools.sat.python.cp_model",
+    "loaders.tables",
+    "optimization.lottery_da",
+    "optimization.data.mid",
+    "metrics",
+    "matplotlib.pyplot",
+    "yamale",
+    "optimization.visualization",
+    "assignment.student_assignment.evaluation.full_report",
+    "assignment.student_assignment.evaluation.heatmaps",
+    "benchmark.slurm",
+)
 DEFAULT_PLAN_FILENAME = "benchmark-plan.json"
 DEFAULT_SCRIPT_FILENAME = "submit-benchmark.sh"
 SBATCH_ACCOUNT = "soal"
@@ -470,6 +520,9 @@ CLAIMED = "claimed"
 HELD = "held"
 DONE = "done"
 STALE = "stale"
+#: A claim its allocation gave back (:meth:`ClaimStore.release`): stale for
+#: everyone, so the next claimant takes the next generation.
+RELEASED = "released"
 
 
 def _job_identity() -> str:
@@ -479,10 +532,28 @@ def _job_identity() -> str:
     return f"local-{socket.gethostname()}-{os.getpid()}"
 
 
+#: squeue states of a job that can still run its claims. A cancelled job
+#: lingers in squeue as COMPLETING for a while; it is not live.
+LIVE_JOB_STATES = frozenset(
+    {
+        "PENDING",
+        "RUNNING",
+        "CONFIGURING",
+        "SUSPENDED",
+        "REQUEUED",
+        "REQUEUE_HOLD",
+        "REQUEUE_FED",
+        "RESIZING",
+        "SIGNALING",
+        "STAGE_OUT",
+    }
+)
+
+
 def live_slurm_jobs(
     run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> frozenset[str] | None:
-    """The user's queued and running job ids, or ``None`` if squeue fails."""
+    """The user's live (queued or running) job ids, or ``None`` if squeue fails."""
     try:
         result = run(
             [
@@ -490,7 +561,7 @@ def live_slurm_jobs(
                 "--noheader",
                 "--user",
                 getpass.getuser(),
-                "--format=%A %i",
+                "--format=%A %i %T",
             ],
             check=True,
             capture_output=True,
@@ -501,7 +572,12 @@ def live_slurm_jobs(
         return None
     jobs = set()
     for line in str(result.stdout or "").splitlines():
-        for value in line.split():
+        values = line.split()
+        if len(values) >= 3:
+            if values[-1].upper() not in LIVE_JOB_STATES:
+                continue
+            values = values[:-1]
+        for value in values:
             jobs.add(value.strip())
             jobs.add(value.strip().split("_", 1)[0])
     jobs.discard("")
@@ -518,26 +594,46 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _read_claim(path: Path) -> dict[str, Any]:
+    try:
+        with path.open(encoding="utf-8") as stream:
+            claim = json.load(stream)
+    except (OSError, json.JSONDecodeError):
+        return {}  # Being written: judged by its age alone.
+    return claim if isinstance(claim, dict) else {}
+
+
 class ClaimStore:
     """Atomic task claims in ``<output_root>/.slurm/claims`` on shared NFS.
 
     A claim is the file ``<task_id>.<generation>``, made with
     ``O_CREAT | O_EXCL`` (atomic on NFSv3+, so no locks), holding JSON: the
-    plan id, Slurm job id, host, pid, allocation index, ``claimed_at``, and
-    ``status`` (``running``, then ``done``). The highest generation is the
-    task's claim. A stale one is taken over by creating the next generation,
-    which again only one claimant can do; files are never deleted, so a
-    generation, once seen, stays taken.
+    plan id, Slurm job id, host, pid, allocation index, ``claimed_at`` (and
+    ``claimed_epoch``, on the file server's clock), ``started`` (``false``
+    until the task's first process reports in, which rewrites the claim
+    with ``started_at``), and ``status`` (``running``, then ``done``, or
+    ``released`` when the allocation gave it back). The highest generation
+    is the task's claim. A stale one is taken over by creating the next
+    generation, which again only one claimant can do; files are never
+    deleted, so a generation, once seen, stays taken.
 
-    A ``running`` claim is stale when its job (a numeric Slurm id) is missing
-    from ``squeue`` as read when this allocation started and the claim is
-    older than that read; when it names this job but another process (an
+    A ``running`` claim is stale when its job (a numeric Slurm id) is not
+    live in this allocation's latest ``squeue`` read (at start, then
+    refreshed by :meth:`refresh_live_jobs` at each recovery check) and its
+    heartbeat is older than that read; when it names this job but another process (an
     earlier run of a requeued job); when it is a local run's claim on this
-    host whose pid is gone; or when its heartbeat (mtime, touched every
+    host whose pid is gone; when it never started and was claimed over
+    ``unstarted_seconds`` ago (a safety net: its owner releases it sooner);
+    or when its heartbeat (mtime, touched every
     :data:`CLAIM_HEARTBEAT_SECONDS`) is older than
-    :data:`STALE_CLAIM_SECONDS`. A ``done`` claim is final for its own plan
-    and stale for any other, so a resubmitted (regenerated) plan reclaims
-    every task it planned and :func:`task_phases` decides what is left.
+    :data:`STALE_CLAIM_SECONDS`. A ``released`` claim is always stale. A
+    ``done`` claim is final for its own plan and stale for any other, so a
+    resubmitted (regenerated) plan reclaims every task it planned and
+    :func:`task_phases` decides what is left.
     """
 
     def __init__(
@@ -549,6 +645,10 @@ class ClaimStore:
         live_jobs: frozenset[str] | None,
         job_id: str | None = None,
         stale_seconds: float = STALE_CLAIM_SECONDS,
+        unstarted_seconds: float | None = None,
+        refresh_seconds: float = LIVE_JOBS_REFRESH_SECONDS,
+        run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+        clock: Callable[[], float] = time.monotonic,
     ):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -558,8 +658,19 @@ class ClaimStore:
         self.host = socket.gethostname()
         self.pid = os.getpid()
         self.stale_seconds = stale_seconds
+        self.unstarted_seconds = (
+            2 * PHASE_START_TIMEOUT_SECONDS
+            if unstarted_seconds is None
+            else unstarted_seconds
+        )
         self.live_jobs = live_jobs
+        self.refresh_seconds = refresh_seconds
+        self._run = run
+        self._clock = clock
+        self._live_jobs_refreshed = clock()
         self.held: dict[str, Path] = {}
+        #: The record each held claim was created with, kept up to date.
+        self.records: dict[str, dict[str, Any]] = {}
         self._clock_offset = 0.0
         self._sync_clock()
         # Claims older than this were written before the squeue read.
@@ -581,6 +692,7 @@ class ClaimStore:
             plan_id=plan.plan_id,
             allocation_index=allocation_index,
             live_jobs=live_jobs,
+            run=run,
         )
 
     def _sync_clock(self) -> None:
@@ -597,9 +709,39 @@ class ClaimStore:
     def now(self) -> float:
         return time.time() + self._clock_offset
 
+    def refresh_live_jobs(self, *, force: bool = False) -> bool:
+        """Re-read ``squeue``, at most once per ``refresh_seconds``.
+
+        A claim whose numeric job is missing from the fresh read, and whose
+        heartbeat predates it, is then stale (:meth:`judge`): a job
+        cancelled mid-run frees its claims at the next recovery check, not
+        only once their heartbeat ages out. If squeue fails, the previous
+        read is kept. Returns whether a read happened.
+        """
+        now = self._clock()
+        if not force and now - self._live_jobs_refreshed < self.refresh_seconds:
+            return False
+        self._live_jobs_refreshed = now
+        read_at = self.now()  # Before the read: later claims are not judged.
+        jobs = live_slurm_jobs(self._run)
+        if jobs is None:
+            return False
+        self.live_jobs = jobs
+        self.live_jobs_read_at = read_at
+        return True
+
     def _path(self, task_id: str, generation: int) -> Path:
         safe = re.sub(r"[^A-Za-z0-9_.-]", "_", task_id)
         return self.root / f"{safe}.{generation}"
+
+    def current_path(self, task_id: str) -> Path | None:
+        """The task's highest existing claim generation, if any."""
+        if not os.path.lexists(self._path(task_id, 0)):
+            return None
+        generation = 0
+        while os.path.lexists(self._path(task_id, generation + 1)):
+            generation += 1
+        return self._path(task_id, generation)
 
     def _record(self, task_id: str, status: str, **extra: Any) -> dict[str, Any]:
         return {
@@ -610,7 +752,7 @@ class ClaimStore:
             "pid": self.pid,
             "allocation_index": self.allocation_index,
             "status": status,
-            "claimed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "claimed_at": _utc_now(),
             **extra,
         }
 
@@ -619,10 +761,14 @@ class ClaimStore:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
             return False
+        record = self._record(
+            task_id, "running", started=False, claimed_epoch=round(self.now(), 3)
+        )
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(self._record(task_id, "running"), stream, sort_keys=True)
+            json.dump(record, stream, sort_keys=True)
             stream.flush()
             os.fsync(stream.fileno())
+        self.records[task_id] = record
         return True
 
     def try_claim(self, task_id: str) -> str:
@@ -643,21 +789,50 @@ class ClaimStore:
                 return state
             generation += 1
 
+    def available(self, task_id: str) -> bool:
+        """Whether a claim attempt could take ``task_id`` now (no claiming)."""
+        path = self.current_path(task_id)
+        return path is None or self.judge(path) == STALE
+
+    def awaiting(self, task_id: str) -> str | None:
+        """Why an idle allocation should not give up on ``task_id`` yet.
+
+        ``"unstarted"``: another allocation holds it but has not started it,
+        so may yet release it. ``"dead-job"``: the claim's job is gone from
+        the latest ``squeue`` read, but its last heartbeat came after that
+        read, so it is not stale until the next read. ``None`` when it is
+        held by a live job that started it (or is not held at all).
+        """
+        path = self.current_path(task_id)
+        if path is None or self.judge(path) != HELD:
+            return None
+        claim = _read_claim(path)
+        if claim.get("status") != "running":
+            return None
+        job = str(claim.get("job_id") or "")
+        if (
+            job.isdigit()
+            and job != self.job_id
+            and self.live_jobs is not None
+            and job not in self.live_jobs
+        ):
+            return "dead-job"
+        if claim.get("started") is False:
+            return "unstarted"
+        return None
+
     def judge(self, path: Path) -> str:
         """Whether an existing claim is :data:`HELD`, :data:`DONE`, or stale."""
         try:
             mtime = path.stat().st_mtime
         except FileNotFoundError:
             return STALE
-        try:
-            with path.open(encoding="utf-8") as stream:
-                claim = json.load(stream)
-            if not isinstance(claim, dict):
-                claim = {}
-        except (OSError, json.JSONDecodeError):
-            claim = {}  # Being written: judged by its age alone.
-        if claim.get("status") == "done":
+        claim = _read_claim(path)
+        status = claim.get("status")
+        if status == "done":
             return DONE if claim.get("plan_id") == self.plan_id else STALE
+        if status == RELEASED:
+            return STALE
         job = str(claim.get("job_id") or "")
         pid = claim.get("pid")
         if job and job == self.job_id:
@@ -678,6 +853,13 @@ class ClaimStore:
             and not _pid_alive(pid)
         ):
             return STALE
+        epoch = claim.get("claimed_epoch")
+        if (
+            claim.get("started") is False
+            and isinstance(epoch, (int, float))
+            and self.now() - epoch > self.unstarted_seconds
+        ):
+            return STALE
         if self.now() - mtime > self.stale_seconds:
             return STALE
         return HELD
@@ -690,12 +872,50 @@ class ClaimStore:
             except OSError as exc:
                 print(f"Claim heartbeat failed for {path}: {exc}", file=sys.stderr)
 
-    def mark_done(self, task_id: str, outcome: str) -> None:
-        """Record ``task_id`` finished for this plan; stop heartbeating it."""
+    def note_started(self, task_id: str, started_at: str) -> None:
+        """Keep a claim's ``started`` fields in the record this store rewrites."""
+        record = self.records.get(task_id)
+        if record is not None and not record.get("started"):
+            record.update(started=True, started_at=started_at)
+
+    def _finish(self, task_id: str, status: str, **extra: Any) -> None:
         path = self.held.pop(task_id, None)
         if path is None:
             return
-        write_json(str(path), self._record(task_id, "done", outcome=outcome))
+        record = dict(self.records.pop(task_id, None) or self._record(task_id, status))
+        record.update(status=status, finished_at=_utc_now(), **extra)
+        write_json(str(path), record)
+
+    def mark_done(self, task_id: str, outcome: str) -> None:
+        """Record ``task_id`` finished for this plan; stop heartbeating it."""
+        self._finish(task_id, "done", outcome=outcome)
+
+    def release(self, task_id: str, reason: str) -> None:
+        """Give ``task_id`` back: its claim is stale for every allocation."""
+        self._finish(task_id, RELEASED, reason=reason)
+
+
+def mark_claim_started(
+    path: str | Path, record: Mapping[str, Any], unit: str
+) -> None:
+    """Rewrite a claim as started, from the process that runs ``unit``.
+
+    Only the process that won its start token (:func:`_take_token`) writes,
+    and its allocation rewrites the claim only after that process ends, so
+    the two never write at once.
+    """
+    now = _utc_now()
+    write_json(
+        str(path),
+        {
+            **record,
+            "started": True,
+            "started_at": record.get("started_at") or now,
+            "unit": unit,
+            "unit_pid": os.getpid(),
+            "unit_started_at": now,
+        },
+    )
 
 
 def claims_dir(plan: SlurmPlan) -> Path:
@@ -711,6 +931,10 @@ class TaskQueue:
     the next in order. A task another allocation holds is rechecked for a
     stale claim once the queue runs dry, at most every
     :data:`CLAIM_RECOVERY_SECONDS` while this allocation still has work.
+
+    The allocation claims one task at a time, only when a slot is free to
+    start it. :meth:`peek` names the tasks it would claim next without
+    claiming them, which is what the cache warm-up uses.
     """
 
     def __init__(
@@ -747,13 +971,23 @@ class TaskQueue:
             for index in indices
         }
 
-    def _pick(self, tier: list[int]) -> int:
-        for position, loaded in enumerate((self.loaded_markets, self.loaded_datasets)):
+    def _pick(
+        self,
+        tier: list[int],
+        markets: set[str],
+        datasets: set[str],
+        exclude: Callable[[int], bool] | None = None,
+    ) -> int | None:
+        """The position in ``tier`` to claim next, or ``None`` if none may be."""
+        allowed = [
+            place for place, index in enumerate(tier) if not (exclude and exclude(index))
+        ]
+        for position, loaded in enumerate((markets, datasets)):
             if loaded:
-                for place, index in enumerate(tier):
-                    if self.keys[index][position] in loaded:
-                        return tier.pop(place)
-        return tier.pop(0)
+                for place in allowed:
+                    if self.keys[tier[place]][position] in loaded:
+                        return place
+        return allowed[0] if allowed else None
 
     def _claimed(self, index: int) -> int:
         market, dataset = self.keys[index]
@@ -761,16 +995,86 @@ class TaskQueue:
         self.loaded_datasets.add(dataset)
         return index
 
-    def claim_next(self, *, force_recovery: bool = False) -> int | None:
-        """Claim and return the next task index, or ``None`` if none is free."""
+    def mark_loaded(self, markets: Iterable[str], datasets: Iterable[str]) -> None:
+        """Record markets and datasets this allocation warmed."""
+        self.loaded_markets.update(markets)
+        self.loaded_datasets.update(datasets)
+
+    def peek(self, count: int) -> list[int]:
+        """The next ``count`` tasks this allocation would claim; claims none.
+
+        It follows :meth:`claim_next`'s order and preferences, skipping
+        tasks another allocation holds or finished. Others may claim them
+        first, so this is a forecast, not a reservation.
+        """
+        markets, datasets = set(self.loaded_markets), set(self.loaded_datasets)
+        picked: list[int] = []
         for tier in self.tiers:
-            while tier:
-                index = self._pick(tier)
+            if len(picked) >= count:
+                break
+            rest = [
+                index
+                for index in tier
+                if self.claims.available(self.plan.tasks[index].task_id)
+            ]
+            while rest and len(picked) < count:
+                place = self._pick(rest, markets, datasets)
+                index = rest.pop(place)
+                picked.append(index)
+                markets.add(self.keys[index][0])
+                datasets.add(self.keys[index][1])
+        return picked
+
+    def requeue(self, index: int) -> None:
+        """Retry a task this allocation released, with the others' claims.
+
+        It is rechecked like a task another allocation holds: once the queue
+        runs dry, so another allocation usually takes it first.
+        """
+        if index not in self.held_elsewhere:
+            self.held_elsewhere.append(index)
+
+    def awaiting_elsewhere(self) -> dict[str, int]:
+        """Tasks held elsewhere that an idle allocation should wait for.
+
+        Counts, by reason (:meth:`ClaimStore.awaiting`), the claims that
+        another allocation may yet release or whose job is gone.
+        """
+        reasons: dict[str, int] = {}
+        for index in self.held_elsewhere:
+            reason = self.claims.awaiting(self.plan.tasks[index].task_id)
+            if reason:
+                reasons[reason] = reasons.get(reason, 0) + 1
+        return reasons
+
+    def claim_next(
+        self,
+        *,
+        force_recovery: bool = False,
+        exclude: Callable[[int], bool] | None = None,
+    ) -> int | None:
+        """Claim and return the next task index, or ``None`` if none is free.
+
+        ``exclude`` marks tasks not to claim yet (those whose dataset is
+        still warming). Tasks are only taken from the first tier with
+        unclaimed tasks, so if all its remaining tasks are excluded, nothing
+        is claimed: the slot waits rather than start a shorter task early.
+        """
+        for tier in self.tiers:
+            while True:
+                place = self._pick(
+                    tier, self.loaded_markets, self.loaded_datasets, exclude
+                )
+                if place is None:
+                    break
+                index = tier.pop(place)
                 state = self.claims.try_claim(self.plan.tasks[index].task_id)
                 if state == CLAIMED:
                     return self._claimed(index)
                 if state == HELD:
                     self.held_elsewhere.append(index)
+            if tier:
+                return None  # The rest of this tier waits for its warm-up.
         now = self.clock()
         if not self.held_elsewhere or not (
             force_recovery
@@ -778,7 +1082,9 @@ class TaskQueue:
             or now - self._last_recovery >= self.recovery_seconds
         ):
             return None
-        for position, index in enumerate(list(self.held_elsewhere)):
+        # A job cancelled since the last read frees its claims now.
+        self.claims.refresh_live_jobs()
+        for index in list(self.held_elsewhere):
             state = self.claims.try_claim(self.plan.tasks[index].task_id)
             if state == HELD:
                 continue
@@ -797,13 +1103,111 @@ class TaskQueue:
 # ---------------------------------------------------------------------------
 # Worker processes.
 
+#: What a unit's process returns when its allocation abandoned it first.
+ABANDONED = "abandoned"
+
 
 def init_worker_process() -> None:
-    """Start-up of every allocation process: each loader warning once."""
+    """Start-up of every allocation process: each loader warning once.
+
+    A process forked from the forkserver inherits the server's pyproj
+    context, whose PROJ database handle (an SQLite connection) was opened
+    when pyproj was imported there. SQLite connections must not cross a
+    fork, so the process drops it and opens its own on first use.
+    """
     warnings.filterwarnings("once", category=UserWarning, module="loaders")
+    context = sys.modules.get("pyproj._context")
+    local = getattr(context, "_CONTEXT_MANAGER_LOCAL", None)
+    if local is not None:
+        try:
+            local.context_manager = None
+        except AttributeError:
+            pass
 
 
-def _staggered(delay: float, function: Callable[..., Any], *args: Any) -> Any:
+def _pool_context():
+    """The start method of the allocation's process pool.
+
+    ``forkserver`` (the default; :data:`START_METHOD_ENVIRONMENT` overrides
+    it): one server process imports :data:`FORKSERVER_PRELOAD` once, and
+    every phase process forks from it, instead of re-importing the
+    environment from NFS as a spawned process does. Each phase still gets a
+    fresh process (``max_tasks_per_child=1``).
+    """
+    import multiprocessing
+
+    method = os.environ.get(START_METHOD_ENVIRONMENT, "").strip() or "forkserver"
+    context = multiprocessing.get_context(method)
+    if method == "forkserver":
+        context.set_forkserver_preload(list(FORKSERVER_PRELOAD))
+    return context
+
+
+def _make_executor(slots: int):
+    return ProcessPoolExecutor(
+        max_workers=slots,
+        max_tasks_per_child=1,
+        initializer=init_worker_process,
+        mp_context=_pool_context(),
+    )
+
+
+def _local_token_dir() -> Path:
+    """A node-local directory for start tokens: RAM if it can, never NFS."""
+    shm = Path("/dev/shm")
+    base = str(shm) if shm.is_dir() and os.access(shm, os.W_OK) else None
+    return Path(tempfile.mkdtemp(prefix="benchmark-slurm-starts-", dir=base))
+
+
+def _take_token(path: str | Path, payload: Mapping[str, Any]) -> bool:
+    """Create the start token ``path``; ``False`` if someone else did."""
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return False
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(dict(payload), stream)
+    return True
+
+
+def _read_token(path: str | Path) -> dict[str, Any] | None:
+    """A start token's payload; ``None`` while nobody has taken it."""
+    try:
+        with open(path, encoding="utf-8") as stream:
+            value = json.load(stream)
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError):
+        return {}  # Taken, still being written.
+    return value if isinstance(value, dict) else {}
+
+
+def _unit_entry(
+    token: str,
+    claim_path: str | None,
+    claim_record: Mapping[str, Any] | None,
+    unit: str,
+    delay: float,
+    function: Callable[..., Any],
+    *args: Any,
+) -> Any:
+    """The first thing a unit's process runs: report the start, then work.
+
+    The process and its allocation race to create the node-local start
+    token. If the allocation made it first (it gave the claim back because
+    this process took too long to start), the process returns
+    :data:`ABANDONED` without touching the task. Otherwise it marks the
+    claim started, waits out its stagger ``delay``, and runs the unit.
+    """
+    if not _take_token(
+        token, {"pid": os.getpid(), "unit": unit, "started": time.time()}
+    ):
+        return ABANDONED
+    if claim_path is not None and claim_record is not None:
+        try:
+            mark_claim_started(claim_path, claim_record, unit)
+        except OSError as exc:
+            print(f"Could not mark claim {claim_path} started: {exc}", file=sys.stderr)
     if delay > 0:
         time.sleep(delay)
     return function(*args)
@@ -862,7 +1266,7 @@ def _warm_spec(spec: WarmSpec) -> dict[str, Any]:
     return warm_dataset(spec)
 
 
-def _submit_unit(executor, plan: SlurmPlan, index: int, unit: str, delay: float):
+def _unit_call(plan: SlurmPlan, index: int, unit: str):
     task = _task_at(plan, index)
     evaluation_args = (
         plan.metrics.strict,
@@ -871,13 +1275,11 @@ def _submit_unit(executor, plan: SlurmPlan, index: int, unit: str, delay: float)
         plan.visualization,
     )
     if unit == FUSED_OPTIMIZE_EVALUATE:
-        return executor.submit(_staggered, delay, _run_fused_task, task, *evaluation_args)
+        return _run_fused_task, (task, *evaluation_args)
     if unit == "evaluate":
-        return executor.submit(
-            _staggered, delay, _run_evaluation_task, task, *evaluation_args
-        )
+        return _run_evaluation_task, (task, *evaluation_args)
     if unit == "match":
-        return executor.submit(_staggered, delay, _run_matching_task, task, plan.matching)
+        return _run_matching_task, (task, plan.matching)
     raise ValueError(f"Unknown task unit {unit!r}.")
 
 
@@ -891,16 +1293,35 @@ def _warm_enabled() -> bool:
 
 
 @dataclass
+class _Running:
+    """One process the allocation submitted, and what it is for."""
+
+    kind: str  # "warm", "task", or "abandoned" (released, still in its slot)
+    token: Path
+    submitted_at: float  # time.time(), comparable with the token's stamp
+    unit: str
+    index: int | None = None
+    key: str | None = None
+    started: bool = False
+
+
+@dataclass
 class _AllocationState:
     """The bookkeeping of one allocation's scheduling loop."""
 
+    token_dir: Path
+    start_timeout: float = 0.0
     remaining: dict[int, deque[str]] = field(default_factory=dict)
     continuing: deque[int] = field(default_factory=deque)
-    ready: deque[int] = field(default_factory=deque)
-    waiting: dict[str, list[int]] = field(default_factory=dict)
-    running: dict[Any, tuple[str, Any]] = field(default_factory=dict)
-    first_wave_started: int = 0
+    warming: dict[str, WarmSpec] = field(default_factory=dict)
+    running: dict[Any, _Running] = field(default_factory=dict)
+    starts: int = 0
+    submissions: int = 0
     failed: bool = False
+
+    def next_token(self) -> Path:
+        self.submissions += 1
+        return self.token_dir / f"{self.submissions}.start"
 
 
 def run_benchmark_worker(
@@ -908,29 +1329,41 @@ def run_benchmark_worker(
     allocation_index: int,
     *,
     claims: ClaimStore | None = None,
+    make_executor: Callable[[int], Any] | None = None,
+    start_timeout: float | None = None,
 ) -> int:
     """Optimize, evaluate, and match tasks claimed from the plan's queue.
 
     Every allocation of a worker count claims tasks one at a time from the
-    same queue (:class:`TaskQueue`, :class:`ClaimStore`), so allocations
-    finish together instead of each draining a fixed chunk. Each concurrent
-    slot (``task_cpus`` CPUs) carries one task through its remaining phases
-    (:func:`task_phases`): optimize and evaluate in one process, then match
-    in a fresh one (``max_tasks_per_child=1``), a task's next phase taking
-    its freed slot ahead of any new task.
+    same queue (:class:`TaskQueue`, :class:`ClaimStore`), and only when a
+    slot is free to start one, so allocations finish together and none
+    holds work it is not running. Each concurrent slot (``task_cpus`` CPUs)
+    carries one task through its remaining phases (:func:`task_phases`):
+    optimize and evaluate in one process, then match in a fresh one
+    (``max_tasks_per_child=1``, forked from a forkserver that preloaded the
+    environment), a task's next phase taking its freed slot ahead of any
+    new task.
 
-    Before the fan-out, the allocation claims its first wave of tasks and
-    warms each distinct dataset among them once, one process per dataset
-    (:mod:`benchmark.warmup`); a first-wave task starts once its dataset is
-    warm, the starts staggered by :data:`WORKER_START_STAGGER_SECONDS`. The
-    allocation exits when the queue is empty and its last task is done;
-    aggregation, the sweep's matching reports included, then runs.
+    Before the fan-out, the allocation peeks at the tasks it would claim
+    first and warms each distinct dataset among them once, one process per
+    dataset (:mod:`benchmark.warmup`); a task of a warming dataset is not
+    claimed until it is warm. The first ``slots`` task starts are staggered
+    by :data:`WORKER_START_STAGGER_SECONDS`. A process that has not
+    reported its start within ``start_timeout`` seconds
+    (:data:`PHASE_START_TIMEOUT_SECONDS`) has its claim released for other
+    allocations and is abandoned. The allocation exits when the queue is
+    empty, no other allocation has an unstarted claim it may release, and
+    its last task is done; aggregation, the sweep's matching reports
+    included, then runs.
     """
 
     plan: SlurmPlan | None = None
     failed = False
     work_started = False
     init_worker_process()
+    for setting in THREAD_ENVIRONMENT:
+        name, value = setting.split("=", 1)
+        os.environ.setdefault(name, value)  # The forkserver inherits these.
     try:
         plan = load_plan(plan_path)
         allocation = _allocation_at(plan, allocation_index)
@@ -940,7 +1373,16 @@ def run_benchmark_worker(
         if claims is None:
             claims = ClaimStore.for_plan(plan, allocation_index)
         queue = TaskQueue(plan, allocation.task_indices, claims)
-        failed = _run_allocation(plan, queue, claims, slots)
+        failed = _run_allocation(
+            plan,
+            queue,
+            claims,
+            slots,
+            make_executor=make_executor or _make_executor,
+            start_timeout=(
+                PHASE_START_TIMEOUT_SECONDS if start_timeout is None else start_timeout
+            ),
+        )
     except Exception as exc:
         print(f"Benchmark allocation failed: {exc}", file=sys.stderr, flush=True)
         failed = True
@@ -961,10 +1403,11 @@ def _claim_with_work(
     state: _AllocationState,
     *,
     force_recovery: bool = False,
+    exclude: Callable[[int], bool] | None = None,
 ) -> int | None:
     """Claim the next task that still has a phase to run."""
     while True:
-        index = queue.claim_next(force_recovery=force_recovery)
+        index = queue.claim_next(force_recovery=force_recovery, exclude=exclude)
         if index is None:
             return None
         task = _task_at(plan, index)
@@ -982,88 +1425,208 @@ def _claim_with_work(
 
 
 def _run_allocation(
-    plan: SlurmPlan, queue: TaskQueue, claims: ClaimStore, slots: int
+    plan: SlurmPlan,
+    queue: TaskQueue,
+    claims: ClaimStore,
+    slots: int,
+    *,
+    make_executor: Callable[[int], Any] = _make_executor,
+    start_timeout: float = PHASE_START_TIMEOUT_SECONDS,
 ) -> bool:
-    state = _AllocationState()
-    with ProcessPoolExecutor(
-        max_workers=slots,
-        max_tasks_per_child=1,
-        initializer=init_worker_process,
-    ) as executor:
-        first_wave = []
-        while len(first_wave) < slots:
-            index = _claim_with_work(plan, queue, claims, state)
-            if index is None:
-                break
-            first_wave.append(index)
-        if _warm_enabled():
-            for spec in warm_specs_for_tasks([plan.tasks[i] for i in first_wave]):
-                state.waiting[spec.key] = [
-                    index
-                    for index in first_wave
-                    if dataset_key(plan.tasks[index].config) == spec.key
-                ]
-                future = executor.submit(_warm_spec, spec)
-                state.running[future] = ("warm", spec.key)
-        waiting = {index for indices in state.waiting.values() for index in indices}
-        state.ready.extend(index for index in first_wave if index not in waiting)
-        last_heartbeat = time.monotonic()
+    state = _AllocationState(token_dir=_local_token_dir(), start_timeout=start_timeout)
+    idle_since: float | None = None
+    last_awaiting: dict[str, int] | None = None
+    try:
+        with make_executor(slots) as executor:
+            if _warm_enabled():
+                peeked = [plan.tasks[index] for index in queue.peek(slots)]
+                for spec in warm_specs_for_tasks(peeked):
+                    state.warming[spec.key] = spec
+                    token = state.next_token()
+                    submitted_at = time.time()
+                    future = executor.submit(
+                        _unit_entry, str(token), None, None, "warm", 0.0,
+                        _warm_spec, spec,
+                    )
+                    state.running[future] = _Running(
+                        "warm", token, submitted_at, "warm", key=spec.key
+                    )
+            last_heartbeat = time.monotonic()
 
-        while True:
-            _fill_slots(executor, plan, queue, claims, state, slots)
-            if not state.running:
-                index = _claim_with_work(
-                    plan, queue, claims, state, force_recovery=True
-                )
-                if index is None:
+            while True:
+                _fill_slots(executor, plan, queue, claims, state, slots)
+                if not state.running:
+                    index = _claim_with_work(
+                        plan, queue, claims, state, force_recovery=True
+                    )
+                    if index is not None:
+                        state.continuing.append(index)  # Recovered: start at once.
+                        idle_since = last_awaiting = None
+                        continue
+                    awaiting = queue.awaiting_elsewhere()
+                    if awaiting:
+                        now = time.monotonic()
+                        if idle_since is None:
+                            idle_since = now
+                        if now - idle_since < EXIT_WAIT_LIMIT_SECONDS:
+                            if awaiting != last_awaiting:
+                                print(
+                                    "Queue empty; waiting on other allocations' "
+                                    f"claims that may be freed: {awaiting}",
+                                    flush=True,
+                                )
+                                last_awaiting = awaiting
+                            time.sleep(IDLE_POLL_SECONDS)
+                            continue
+                        print(
+                            f"Gave up waiting after {EXIT_WAIT_LIMIT_SECONDS:.0f}s "
+                            f"on claims {awaiting}; a resubmit runs what is left.",
+                            file=sys.stderr,
+                            flush=True,
+                        )
                     break
-                state.continuing.append(index)  # Recovered: start at once.
-                continue
-            done, _ = wait(
-                state.running,
-                timeout=CLAIM_HEARTBEAT_SECONDS,
-                return_when=FIRST_COMPLETED,
-            )
-            if time.monotonic() - last_heartbeat >= CLAIM_HEARTBEAT_SECONDS / 2:
-                claims.heartbeat()
-                last_heartbeat = time.monotonic()
-            for future in done:
-                _finish(plan, claims, state, future)
+                done, _ = wait(
+                    state.running, timeout=POLL_SECONDS, return_when=FIRST_COMPLETED
+                )
+                _check_starts(plan, queue, claims, state)
+                if time.monotonic() - last_heartbeat >= CLAIM_HEARTBEAT_SECONDS / 2:
+                    claims.heartbeat()
+                    last_heartbeat = time.monotonic()
+                for future in done:
+                    _finish(plan, queue, claims, state, future)
+    finally:
+        shutil.rmtree(state.token_dir, ignore_errors=True)
     return state.failed
 
 
 def _fill_slots(executor, plan, queue, claims, state, slots) -> None:
+    """Start work in every free slot, claiming a task only to start it."""
     while len(state.running) < slots:
         delay = 0.0
         if state.continuing:
             index = state.continuing.popleft()
-        elif state.ready:
-            index = state.ready.popleft()
-            # Only the first wave starts together; later tasks start as
-            # slots free, already spread out.
-            delay = state.first_wave_started * WORKER_START_STAGGER_SECONDS
-            state.first_wave_started += 1
-        elif state.waiting:
-            return  # The first wave waits for its warm-up before claiming more.
         else:
-            index = _claim_with_work(plan, queue, claims, state)
+            warming = state.warming
+            exclude = (
+                (lambda i: dataset_key(plan.tasks[i].config) in warming)
+                if warming
+                else None
+            )
+            index = _claim_with_work(plan, queue, claims, state, exclude=exclude)
             if index is None:
                 return
+            # Only the first wave starts together; later tasks start as
+            # slots free, already spread out.
+            if state.starts < slots:
+                delay = state.starts * WORKER_START_STAGGER_SECONDS
+            state.starts += 1
         unit = state.remaining[index].popleft()
-        future = _submit_unit(executor, plan, index, unit, delay)
-        state.running[future] = ("task", (index, unit))
+        task_id = _task_at(plan, index).task_id
+        path = claims.held.get(task_id)
+        function, args = _unit_call(plan, index, unit)
+        token = state.next_token()
+        submitted_at = time.time()
+        future = executor.submit(
+            _unit_entry,
+            str(token),
+            None if path is None else str(path),
+            claims.records.get(task_id),
+            unit,
+            delay,
+            function,
+            *args,
+        )
+        state.running[future] = _Running("task", token, submitted_at, unit, index=index)
 
 
-def _finish(plan, claims, state, future) -> None:
-    kind, payload = state.running.pop(future)
-    if kind == "warm":
+def _check_starts(plan, queue, claims, state) -> None:
+    """Log each process's start-up; release claims whose process never started.
+
+    A task unit whose process has not taken its start token within
+    ``state.start_timeout`` seconds of being submitted is abandoned: the
+    allocation takes the token itself, so the process, if it ever starts,
+    returns without running; the claim is released for other allocations;
+    and the task is requeued here behind every other. The abandoned
+    process keeps its slot until it exits, so a stalled node claims
+    nothing new.
+    """
+    now = time.time()
+    for entry in state.running.values():
+        if entry.started or entry.kind == "abandoned":
+            continue
+        token = _read_token(entry.token)
+        if token is not None:
+            _note_start(plan, claims, entry, token)
+            continue
+        if entry.kind != "task" or now - entry.submitted_at <= state.start_timeout:
+            continue
+        if not _take_token(entry.token, {"abandoned": True, "at": now}):
+            continue  # The process started just now; seen on the next pass.
+        task_id = _task_at(plan, entry.index).task_id
+        reason = (
+            f"its {entry.unit} process did not start within "
+            f"{state.start_timeout:.0f}s"
+        )
+        claims.release(task_id, reason)
+        state.remaining.pop(entry.index, None)
+        queue.requeue(entry.index)
+        entry.kind = "abandoned"
+        print(f"Released task {task_id}: {reason}", file=sys.stderr, flush=True)
+
+
+def _note_start(plan, claims, entry: _Running, token: Mapping[str, Any]) -> None:
+    entry.started = True
+    stamp = token.get("started")
+    startup = (
+        f"{stamp - entry.submitted_at:.2f}s"
+        if isinstance(stamp, (int, float))
+        else "?"
+    )
+    if entry.kind == "task":
+        task_id = _task_at(plan, entry.index).task_id
+        claims.note_started(task_id, _utc_now())
+    else:
+        task_id = (entry.key or "?")[:12]
+    print(
+        f"start task={task_id} unit={entry.unit} startup={startup} "
+        f"pid={token.get('pid')}",
+        flush=True,
+    )
+
+
+def _finish(plan, queue, claims, state, future) -> None:
+    entry = state.running.pop(future)
+    if not entry.started and entry.kind != "abandoned":
+        token = _read_token(entry.token)
+        if token is not None:
+            _note_start(plan, claims, entry, token)
+    if entry.kind == "abandoned":
+        try:
+            outcome = future.result()
+        except Exception as exc:
+            outcome = f"{exc.__class__.__name__}: {exc}"
+        print(
+            f"Abandoned {entry.unit} process of task {entry.index} exited ({outcome}).",
+            flush=True,
+        )
+        return
+    if entry.kind == "warm":
+        spec = state.warming.pop(entry.key, None)
         try:
             print(format_warm_summary(future.result()), flush=True)
         except Exception as exc:
             print(f"Cache warm-up failed: {exc}", file=sys.stderr, flush=True)
-        state.ready.extend(state.waiting.pop(payload, []))
+        else:
+            if spec is not None:
+                queue.mark_loaded(
+                    (
+                        market_key({**spec.config, "matching_policy": policy})
+                        for policy in spec.policies
+                    ),
+                    (spec.key,),
+                )
         return
-    index, unit = payload
+    index, unit = entry.index, entry.unit
     task_id = _task_at(plan, index).task_id
     try:
         _report_task_error(unit, index, future.result())
