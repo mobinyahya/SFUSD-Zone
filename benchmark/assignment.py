@@ -694,7 +694,7 @@ def aggregate_matching_metrics(
 #: Per-run files read ahead while one is written. Reads are NFS round trips
 #: (about 0.25 s each from a compute node), so overlapping them is what makes
 #: an aggregation of a thousand runs take a minute rather than half an hour.
-CONCAT_READ_AHEAD = 64
+CONCAT_READ_AHEAD = 16
 
 
 def _head_record(path: Path) -> tuple[list[str] | None, list[str] | None]:
@@ -713,7 +713,7 @@ def _read_ahead(paths: list[str]):
         with open(path, "rb") as raw:
             return raw.read()
 
-    with ThreadPoolExecutor(max_workers=min(32, CONCAT_READ_AHEAD)) as executor:
+    with ThreadPoolExecutor(max_workers=CONCAT_READ_AHEAD) as executor:
         pending = deque()
         for path in paths:
             pending.append((path, executor.submit(read, path)))
