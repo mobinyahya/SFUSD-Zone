@@ -63,6 +63,34 @@ def test_byte_copy_gives_the_row_by_row_output_exactly(tmp_path):
     assert rows == 6
 
 
+def test_a_quoted_header_still_takes_the_byte_copy(tmp_path, monkeypatch):
+    # Metric names such as "Income below 50000, CTIP" are quoted in the
+    # header; the rows below them are plain and are copied as bytes.
+    header = 'config_name,"Income below 50000, CTIP",x\n'
+    paths = [
+        _write(tmp_path / "a.csv", header + "a:1,0.5,1\n"),
+        _write(tmp_path / "b.csv", header + "b:1,0.25,2\nb:2,,3\n"),
+        _write(tmp_path / "c.csv", header + 'c:1,"1,2",3\n'),  # row path
+    ]
+    copied = []
+    import benchmark.assignment as assignment
+
+    original = assignment._copy_csv_body
+
+    def spy(*args):
+        result = original(*args)
+        copied.append(result is not None)
+        return result
+
+    monkeypatch.setattr(assignment, "_copy_csv_body", spy)
+    fast, reference = tmp_path / "fast.csv", tmp_path / "reference.csv"
+    _concatenate_metric_csvs(paths, fast)
+    _row_by_row(paths, reference)
+
+    assert fast.read_bytes() == reference.read_bytes()
+    assert copied == [True, True, False]
+
+
 def test_byte_copy_still_rejects_interleaved_runs(tmp_path):
     import pytest
 

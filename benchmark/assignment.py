@@ -49,6 +49,7 @@ MATCHING_COMPLETE_FILENAME = "matching_complete.json"
 MATCHING_SCHEMA_VERSION = 1
 AGGREGATE_METRICS_DIRNAME = "aggregate_metrics"
 
+
 @dataclass
 class AssignmentBatchResult:
     total: int = 0
@@ -718,7 +719,9 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
         for _key, path, header in sources:
             config_index = header.index("config_name")
             copied = (
-                _copy_csv_body(path, out, config_index) if header == columns else None
+                _copy_csv_body(path, out, config_index, header)
+                if header == columns
+                else None
             )
             if copied is not None:
                 first_name, last_name, count = copied
@@ -733,8 +736,7 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
                 rows += count
                 continue
             positions = [
-                header.index(column) if column in header else None
-                for column in columns
+                header.index(column) if column in header else None for column in columns
             ]
             with open(path, newline="", encoding="utf-8") as stream:
                 reader = csv.reader(stream)
@@ -757,30 +759,38 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
     return rows
 
 
-def _copy_csv_body(path: str, out, config_index: int) -> tuple[str, str, int] | None:
-    """Copy a CSV's rows (not its header) to ``out`` unchanged, if it is plain.
+def _copy_csv_body(
+    path: str, out, config_index: int, header: list[str]
+) -> tuple[str, str, int] | None:
+    """Copy a CSV's rows (not its header) to ``out`` unchanged, if they are plain.
 
-    A file with no quote character and no carriage return has one record per
-    ``\\n``-terminated line and no field holding a comma, so its records are
-    its lines and its fields its comma-split cells, exactly as the csv module
-    would read them. Returns the first and last rows' ``config_name`` and the
-    row count, or ``None`` for any other file (the caller then re-writes it
-    row by row).
+    The header (often quoted: some metric names hold commas) must be the
+    file's first line, which it is when that line parses to ``header``. Rows
+    with no quote character and no carriage return are one record per
+    ``\\n``-terminated line with no field holding a comma, so their records
+    are their lines and their fields the comma-split cells, exactly as the
+    csv module would read them. Returns the first and last rows'
+    ``config_name`` and the row count, or ``None`` when the rows are not plain
+    (the caller then re-writes them row by row).
     """
     with open(path, "rb") as raw:
         data = raw.read()
-    if b'"' in data or b"\r" in data:
-        return None
     end = data.find(b"\n")
     if end < 0:
         return "", "", 0
+    first_line = data[:end].decode("utf-8")
+    if next(csv.reader([first_line]), None) != header:
+        return None
     body = data[end + 1 :]
+    if b'"' in body or b"\r" in body:
+        return None
     if not body:
         return "", "", 0
     if not body.endswith(b"\n"):
         body += b"\n"
-    lines = body.split(b"\n", 1)[0], body.rstrip(b"\n").rsplit(b"\n", 1)[-1]
-    first_name = lines[0].decode("utf-8").split(",")[config_index]
-    last_name = lines[1].decode("utf-8").split(",")[config_index]
+    first = body.split(b"\n", 1)[0]
+    last = body.rstrip(b"\n").rsplit(b"\n", 1)[-1]
+    first_name = first.decode("utf-8").split(",")[config_index]
+    last_name = last.decode("utf-8").split(",")[config_index]
     out.write(body.decode("utf-8"))
     return first_name, last_name, body.count(b"\n")
