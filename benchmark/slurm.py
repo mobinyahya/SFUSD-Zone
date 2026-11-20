@@ -340,14 +340,7 @@ def write_submission_script(
     script_path = _artifact_path(plan, path, DEFAULT_SCRIPT_FILENAME)
     script_path.parent.mkdir(parents=True, exist_ok=True)
     _log_dir(plan).mkdir(parents=True, exist_ok=True)
-    plan_path = Path(plan_path).expanduser().resolve()
-    for index in range(len(plan.allocations)):
-        _write_text_atomic(
-            _allocation_script_path(plan, index),
-            allocation_script(plan, plan_path, index),
-            mode=0o755,
-        )
-    text = submission_script(plan, plan_path)
+    text = submission_script(plan, Path(plan_path).expanduser().resolve())
     _write_text_atomic(script_path, text, mode=0o755)
     return script_path
 
@@ -383,7 +376,7 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
             f'if grep -qxF {shlex.quote(f"benchmark-{index}|{tag}")} <<< "$live"; then'
         )
         lines.append(f'    printf "%s\\n" "allocation {index} already live"')
-        lines.append(f"elif job=$({_sbatch_line(command)}); then")
+        lines.append(f"elif job=$({_shell_command(command)}); then")
         lines.append(f'    printf "%s\\n" "allocation {index}=${{job%%;*}}"')
         lines.append("else")
         lines.append(f'    printf "%s\\n" "allocation {index} not submitted" >&2')
@@ -438,8 +431,6 @@ def submit_plan(
     submitted: list[SubmittedAllocation] = []
     for index in wanted:
         command = _sbatch_options(plan, plan_path, index, sbatch=sbatch)
-        if os.environ.get(EXCLUDE_ENV):
-            command.insert(1, f"--exclude={os.environ[EXCLUDE_ENV]}")
         try:
             job_id = _submit(command, run)
         except subprocess.CalledProcessError as exc:
@@ -2025,7 +2016,7 @@ def _sbatch_options(
     sbatch: str = "sbatch",
 ) -> list[str]:
     allocation = _allocation_at(plan, index)
-    worker = shlex.join(
+    worker_command = f"{GUROBI_LICENSE_SETUP} && " + shlex.join(
         [
             "uv",
             "run",
@@ -2038,11 +2029,6 @@ def _sbatch_options(
             "--allocation-index",
             str(index),
         ]
-    )
-    worker_command = (
-        f"{GUROBI_LICENSE_SETUP} && "
-        f"{_node_probe_command(_allocation_script_path(plan, index), index)} && "
-        f"{worker}"
     )
     log_prefix = _log_dir(plan) / f"{index:02d}-benchmark-%j"
     return [
@@ -2066,83 +2052,6 @@ def _sbatch_options(
         "--wrap",
         worker_command,
     ]
-
-
-#: Environment variable of comma-separated hosts an allocation is submitted
-#: with ``--exclude``; a job that finds its node too slow adds the node and
-#: resubmits itself (:func:`_node_probe_command`).
-EXCLUDE_ENV = "SFUSD_SLURM_EXCLUDE"
-#: Seconds a node may take to import numpy and pandas from the shared
-#: environment before an allocation leaves it. A healthy node takes about a
-#: second, cold; a node with a degraded NFS client took 32 s for numpy alone
-#: (2026-11-19), and many minutes for the full stack.
-NODE_PROBE_SECONDS = 90
-#: Stop hopping once this many nodes are excluded: something wider is wrong.
-MAX_EXCLUDED_NODES = 6
-
-
-def _allocation_script_path(plan: SlurmPlan, index: int) -> Path:
-    """``.slurm/submit-<index>.sh``: submits one allocation, honouring excludes."""
-    return Path(plan.output_root) / SLURM_DIRNAME / f"submit-{index:02d}.sh"
-
-
-def _sbatch_line(command: Sequence[str]) -> str:
-    """``command`` as shell text, with ``--exclude`` from :data:`EXCLUDE_ENV`."""
-    return (
-        f"{_shell_command(command[:1])} "
-        f'${{{EXCLUDE_ENV}:+"--exclude=${EXCLUDE_ENV}"}} '
-        f"{_shell_command(command[1:])}"
-    )
-
-
-def allocation_script(plan: SlurmPlan, plan_path: Path, index: int) -> str:
-    """The script that submits allocation ``index`` and prints its job id."""
-    return "\n".join(
-        [
-            "#!/usr/bin/env bash",
-            "set -uo pipefail",
-            f"# Submits allocation {index} of plan {plan.plan_id}; a job that finds",
-            "# its node too slow reruns this with the node added to "
-            f"{EXCLUDE_ENV}.",
-            f"job=$({_sbatch_line(_sbatch_options(plan, plan_path, index))}) || exit $?",
-            'printf "%s\\n" "${job%%;*}"',
-            "",
-        ]
-    )
-
-
-def _node_probe_command(script: Path, index: int) -> str:
-    """POSIX sh run first in every job (sbatch --wrap runs /bin/sh, which is
-    dash on the cluster): leave a node too slow to load the code.
-
-    The allocation imports numpy and pandas with the project's interpreter
-    under a timeout. On a node whose NFS client is degraded that takes many
-    times longer than anywhere else, and the whole stack longer still, so the
-    job resubmits itself with the node excluded and exits; its tasks were
-    never claimed (claims are taken only by running slots), so nothing waits
-    on it. The probe fails the job, rather than hopping, once
-    :data:`MAX_EXCLUDED_NODES` nodes are excluded.
-    """
-    seconds = f"${{SFUSD_NODE_PROBE_SECONDS:-{NODE_PROBE_SECONDS}}}"
-    hop = " ".join(
-        [
-            "host=$(hostname -s);",
-            f'exclude="${{{EXCLUDE_ENV}:+${EXCLUDE_ENV},}}$host";',
-            'count=$(printf "%s\\n" "$exclude" | tr "," "\\n" | grep -c .);',
-            f'printf "%s\\n" "node probe: $host took over {seconds}s to import'
-            ' numpy and pandas from .venv; allocation',
-            f'{index} moves to another node (excluding $exclude)" >&2;',
-            f'if [ "$count" -gt {MAX_EXCLUDED_NODES} ]; then',
-            'printf "%s\\n" "node probe: too many slow nodes; giving up" >&2;',
-            "exit 1; fi;",
-            f'{EXCLUDE_ENV}="$exclude" bash {shlex.quote(str(script))} >&2;',
-            "exit 0",
-        ]
-    )
-    return (
-        f"if ! timeout {seconds} .venv/bin/python -c 'import numpy, pandas'; "
-        f"then {hop}; fi"
-    )
 
 
 def _submit(

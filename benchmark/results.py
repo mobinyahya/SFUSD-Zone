@@ -43,7 +43,7 @@ def discover_run_dirs(root_folder: str) -> list[str]:
 
 #: Threads that read run folders during aggregation. Reads are I/O-bound
 #: (NFS round trips), so threads overlap them without extra CPU.
-AGGREGATION_READ_THREADS = 16
+AGGREGATION_READ_THREADS = 32
 
 
 def _read_parallel(function, items: list) -> list:

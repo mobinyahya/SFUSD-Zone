@@ -643,11 +643,19 @@ def aggregate_matching_metrics(
         tempfile.mkdtemp(prefix="aggregate_metrics.tmp.", dir=output_root)
     )
     try:
-        row_counts = {
-            name: _concatenate_metric_csvs(paths, staging_dir / files[name])
-            for name, paths in sources.items()
-            if paths
-        }
+        # The reports are built side by side: each is bound by NFS round
+        # trips, not by CPU, so together they take about as long as one.
+        from concurrent.futures import ThreadPoolExecutor
+
+        names = [name for name, paths in sources.items() if paths]
+        with ThreadPoolExecutor(max_workers=max(1, len(names))) as executor:
+            futures = {
+                name: executor.submit(
+                    _concatenate_metric_csvs, sources[name], staging_dir / files[name]
+                )
+                for name in names
+            }
+            row_counts = {name: futures[name].result() for name in names}
         with (staging_dir / MarketGenerator.AGGREGATE_MANIFEST_FILENAME).open(
             "w", encoding="utf-8"
         ) as stream:
@@ -686,7 +694,7 @@ def aggregate_matching_metrics(
 #: Per-run files read ahead while one is written. Reads are NFS round trips
 #: (about 0.25 s each from a compute node), so overlapping them is what makes
 #: an aggregation of a thousand runs take a minute rather than half an hour.
-CONCAT_READ_AHEAD = 32
+CONCAT_READ_AHEAD = 64
 
 
 def _head_record(path: Path) -> tuple[list[str] | None, list[str] | None]:
@@ -705,7 +713,7 @@ def _read_ahead(paths: list[str]):
         with open(path, "rb") as raw:
             return raw.read()
 
-    with ThreadPoolExecutor(max_workers=min(16, CONCAT_READ_AHEAD)) as executor:
+    with ThreadPoolExecutor(max_workers=min(32, CONCAT_READ_AHEAD)) as executor:
         pending = deque()
         for path in paths:
             pending.append((path, executor.submit(read, path)))

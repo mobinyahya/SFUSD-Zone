@@ -94,7 +94,7 @@ def test_submission_script_has_required_directives(tmp_path):
 
     script = submission_script(plan, plan_path)
 
-    assert script.count("--parsable -A soal -p soal") == 1
+    assert script.count("sbatch --parsable -A soal -p soal") == 1
     assert script.count("--ntasks=1") == 1
     assert "--cpus-per-task=4" in script
     assert script.count("--mem-per-cpu=4G") == 1
@@ -122,7 +122,7 @@ def test_matching_plan_submits_only_its_allocations(tmp_path):
     script = submission_script(plan, tmp_path / "benchmark-plan.json")
 
     # Matching runs inside the allocation: no assignment job graph behind it.
-    assert script.count("--parsable -A soal") == 1
+    assert script.count("sbatch --parsable") == 1
     assert "--upstream-job-id" not in script
     assert "--dependency" not in script
     assert "--mem-per-cpu=4G" in script
@@ -778,7 +778,7 @@ def test_large_benchmark_plan_uses_twelve_allocations_and_usable_cpus(tmp_path):
     assert all(item.cpus // item.task_cpus == 4 for item in allocations)
     assert {item.task_indices for item in allocations} == {tuple(range(100))}
     assert (
-        submission_script(plan, tmp_path / "plan.json").count("--parsable -A soal")
+        submission_script(plan, tmp_path / "plan.json").count("sbatch --parsable")
         == MAX_SLURM_JOBS
     )
 
