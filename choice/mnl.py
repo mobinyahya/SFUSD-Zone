@@ -281,7 +281,12 @@ class MNLChoiceModel(ChoiceModel):
                 "not a welfare measurement. Fit an estimate for this cohort, or "
                 "read the choice metrics as unavailable rather than as zero"
             )
-        warnings.warn(detail + ".", stacklevel=2)
+        from loaders.table_cache import first_in_shared_dir
+
+        # Every run of a sweep reloads the same estimate; under Slurm the
+        # allocation shows the warning once, not once per run.
+        if first_in_shared_dir(detail):
+            warnings.warn(detail + ".", stacklevel=2)
 
     def _merged(self) -> pd.DataFrame:
         """Selected students joined to their estimate rows (inner join)."""

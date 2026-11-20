@@ -140,7 +140,14 @@ FORKSERVER_PRELOAD = (
     "optimization.visualization",
     "assignment.student_assignment.evaluation.full_report",
     "assignment.student_assignment.evaluation.heatmaps",
-    "benchmark.slurm",
+    # benchmark.slurm's own imports, not the module itself: it is the main
+    # module (``python -m benchmark.slurm``), which each child re-runs as
+    # __mp_main__, and runpy warns when it finds it imported already.
+    "benchmark.config",
+    "benchmark.assignment",
+    "benchmark.results",
+    "benchmark.runner",
+    "benchmark.warmup",
 )
 DEFAULT_PLAN_FILENAME = "benchmark-plan.json"
 DEFAULT_SCRIPT_FILENAME = "submit-benchmark.sh"

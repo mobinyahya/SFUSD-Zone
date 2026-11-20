@@ -152,8 +152,17 @@ def loader_warn(message: str, *, stacklevel: int = 2) -> None:
 WARN_ONCE_DIR_ENV = "SFUSD_WARN_ONCE_DIR"
 
 
+def first_in_shared_dir(message: str) -> bool:
+    """Whether this process is the first sharing the warn-once dir to show it.
+
+    Always true without :data:`WARN_ONCE_DIR_ENV`. Any module can use it to
+    show a warning every phase process would otherwise repeat once per
+    allocation (as ``choice.mnl`` does for its estimate-coverage warning).
+    """
+    return _first_in_shared_dir(message)
+
+
 def _first_in_shared_dir(message: str) -> bool:
-    """Whether this process is the first sharing the warn-once dir to show it."""
     directory = os.environ.get(WARN_ONCE_DIR_ENV)
     if not directory:
         return True
