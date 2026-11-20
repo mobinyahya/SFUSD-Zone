@@ -343,7 +343,45 @@ def test_generated_script_submits_past_a_refused_allocation(tmp_path, monkeypatc
     assert result.returncode == 0
     assert result.stdout.count("allocation ") == 11
     assert "allocation 2 not submitted" in result.stderr
-    assert "topup --plan" in result.stderr
+    assert "Run this script again" in result.stderr
+
+
+def test_rerunning_the_script_submits_only_allocations_not_live(tmp_path, monkeypatch):
+    plan = _large_matching_plan(tmp_path, monkeypatch)
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    log = tmp_path / "sbatch.log"
+    tag = f"sfusd-plan:{plan.plan_id}"
+    squeue = directory / "squeue"
+    squeue.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' 'benchmark-0|{tag}' 'benchmark-5|{tag}' "
+        "'benchmark-1|sfusd-plan:other' 'benchmark-2|'\n"
+    )
+    squeue.chmod(0o755)
+    sbatch = directory / "sbatch"
+    sbatch.write_text(
+        "#!/bin/sh\n"
+        f"for a in \"$@\"; do case $a in --job-name=*) echo $a >> '{log}';; esac; done\n"
+        "echo 900\n"
+    )
+    sbatch.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash"],
+        input=submission_script(plan, tmp_path / "plan.json"),
+        env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "allocation 0 already live" in result.stdout
+    assert "allocation 5 already live" in result.stdout
+    submitted = log.read_text().split()
+    assert submitted == [
+        f"--job-name=benchmark-{i}" for i in range(12) if i not in (0, 5)
+    ]
 
 
 @pytest.mark.parametrize(

@@ -351,10 +351,25 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
     _submission_job_count(plan)
     allocations = plan.allocations
     lines = ["#!/usr/bin/env bash", "set -uo pipefail", GUROBI_LICENSE_SETUP, ""]
-    lines.append("refused=0")
+    tag = f"{_PLAN_COMMENT_PREFIX}{plan.plan_id}"
+    lines.extend(
+        [
+            "# Re-running this script submits only the plan's allocations that are",
+            "# not already pending or running (each job carries the plan id in its",
+            "# comment), so it doubles as the top-up after a job limit or a lost job.",
+            'live=$(squeue --noheader --user "$(id -un)" '
+            "--states=PENDING,RUNNING,CONFIGURING,REQUEUED,RESIZING,SUSPENDED "
+            "--format='%j|%k' 2>/dev/null)",
+            "refused=0",
+        ]
+    )
     for index in range(len(allocations)):
         command = _sbatch_options(plan, plan_path, index)
-        lines.append(f"if job=$({_shell_command(command)}); then")
+        lines.append(
+            f'if grep -qxF {shlex.quote(f"benchmark-{index}|{tag}")} <<< "$live"; then'
+        )
+        lines.append(f'    printf "%s\\n" "allocation {index} already live"')
+        lines.append(f"elif job=$({_shell_command(command)}); then")
         lines.append(f'    printf "%s\\n" "allocation {index}=${{job%%;*}}"')
         lines.append("else")
         lines.append(f'    printf "%s\\n" "allocation {index} not submitted" >&2')
@@ -370,8 +385,8 @@ def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
             [
                 "if (( refused )); then",
                 '    printf "%s\\n" "$refused allocation(s) not submitted; the rest '
-                "share the queue. Add more later with: uv run python -m benchmark.slurm "
-                f'topup --plan {shlex.quote(str(plan_path))}" >&2',
+                "share the queue. Run this script again later to add them (it skips "
+                'allocations already live)." >&2',
                 "fi",
             ]
         )
