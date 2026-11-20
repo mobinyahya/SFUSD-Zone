@@ -2112,7 +2112,8 @@ def allocation_script(plan: SlurmPlan, plan_path: Path, index: int) -> str:
 
 
 def _node_probe_command(script: Path, index: int) -> str:
-    """Bash run first in every job: leave a node too slow to load the code.
+    """POSIX sh run first in every job (sbatch --wrap runs /bin/sh, which is
+    dash on the cluster): leave a node too slow to load the code.
 
     The allocation imports numpy and pandas with the project's interpreter
     under a timeout. On a node whose NFS client is degraded that takes many
@@ -2127,11 +2128,11 @@ def _node_probe_command(script: Path, index: int) -> str:
         [
             "host=$(hostname -s);",
             f'exclude="${{{EXCLUDE_ENV}:+${EXCLUDE_ENV},}}$host";',
-            'count=$(tr "," "\\n" <<< "$exclude" | grep -c .);',
+            'count=$(printf "%s\\n" "$exclude" | tr "," "\\n" | grep -c .);',
             f'printf "%s\\n" "node probe: $host took over {seconds}s to import'
             ' numpy and pandas from .venv; allocation',
             f'{index} moves to another node (excluding $exclude)" >&2;',
-            f"if (( count > {MAX_EXCLUDED_NODES} )); then",
+            f'if [ "$count" -gt {MAX_EXCLUDED_NODES} ]; then',
             'printf "%s\\n" "node probe: too many slow nodes; giving up" >&2;',
             "exit 1; fi;",
             f'{EXCLUDE_ENV}="$exclude" bash {shlex.quote(str(script))} >&2;',

@@ -59,7 +59,7 @@ def test_a_slow_node_resubmits_the_allocation_without_itself(tmp_path, previous)
     }
 
     result = subprocess.run(
-        ["bash", "-c", command],
+        ["sh", "-c", command],
         cwd=tmp_path / "project",
         env=env,
         capture_output=True,
@@ -82,7 +82,7 @@ def test_a_healthy_node_runs_the_worker(tmp_path):
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
 
     result = subprocess.run(
-        ["bash", "-c", command],
+        ["sh", "-c", command],
         cwd=tmp_path / "project",
         env=env,
         capture_output=True,
@@ -105,7 +105,7 @@ def test_hopping_stops_after_too_many_slow_nodes(tmp_path):
     }
 
     result = subprocess.run(
-        ["bash", "-c", command],
+        ["sh", "-c", command],
         cwd=tmp_path / "project",
         env=env,
         capture_output=True,
