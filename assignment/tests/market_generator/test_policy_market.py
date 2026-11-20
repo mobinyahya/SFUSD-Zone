@@ -257,7 +257,16 @@ UNMODELLED = [
             {"guard-rails": -1, "reserve-settings": {}},
         ],
     ),
+    # The utility model with what the shared path does not model: no or an
+    # unknown list length, a bad Gumbel scale, an unknown key, or a non-bool
+    # enable.
     ("utility-model", {"enable": True}),
+    ("utility-model", {"enable": True, "list-length": "real_length"}),
+    ("utility-model", {"enable": True, "list-length": 7}),
+    ("utility-model", {"enable": True, "list-length": "7", "gumbel-scale": -1}),
+    ("utility-model", {"enable": True, "list-length": "7", "gumbel-scale": True}),
+    ("utility-model", {"enable": True, "list-length": "7", "shuffle": True}),
+    ("utility-model", {"enable": "yes", "list-length": "7"}),
     ("assignment-algorithm", "TTC"),
     ("designation-ordering-type", "simple"),
     ("drop_below_aa", True),
@@ -374,3 +383,200 @@ def test_mid_names_every_unmodelled_setting_at_once():
     config = _policy(**{"ties-options": ["STB"], "read-lotteries": True})
     with pytest.raises(ValueError, match="ties-options=.*read-lotteries="):
         _require_modelled_policy(config, "p")
+
+
+# -- the utility model -----------------------------------------------------------
+
+#: Utility-model blocks both consumers model.
+UTILITY_MODELS = [
+    {"enable": True, "list-length": "7"},
+    {"enable": True, "list-length": "outside_option"},
+    {
+        "enable": True,
+        "list-length": "3",
+        "gumbel-scale": 0.5,
+        "designate-lp-for-all": True,
+        "save-path": "/tmp/utilities.npy",
+    },
+    {"enable": True, "list-length": "7", "gumbel-scale": 0},
+]
+
+
+@pytest.mark.parametrize("utility_model", UTILITY_MODELS)
+def test_the_utility_model_is_on_the_whitelist_for_both_consumers(utility_model):
+    config = _policy(**{"utility-model": utility_model})
+    assert pm.utility_model_enabled(config)
+    assert pm.unmodelled_policy_settings(config, "simulator") == []
+    assert pm.unmodelled_policy_settings(config, "mid") == []
+
+
+@pytest.mark.parametrize(
+    "utility_model",
+    [None, {"enable": None, "list-length": "7"}, {"enable": False, "list-length": "x"}],
+)
+def test_an_unset_or_disabled_utility_model_means_the_submitted_lists(utility_model):
+    config = _policy(**{"utility-model": utility_model})
+    assert not pm.utility_model_enabled(config)
+    assert pm.unmodelled_policy_settings(config, "mid") == []
+    # It does not key the market either: the submitted-list caches stay put.
+    assert pm.policy_market_settings(config) == pm.policy_market_settings(_policy())
+
+
+def test_the_utility_model_needs_designation():
+    config = _policy(
+        **{"utility-model": UTILITY_MODELS[0], "designate": False}
+    )
+    assert _names(pm.unmodelled_policy_settings(config, "simulator")) == [
+        "utility-model"
+    ]
+
+
+def test_an_enabled_utility_model_keys_the_market_by_what_it_reads():
+    settings = {
+        repr(model): pm.policy_market_settings(_policy(**{"utility-model": model}))
+        for model in UTILITY_MODELS
+    }
+    seven, outside, lp_for_all, _ = settings.values()
+    # The list length and Gumbel scale act at draw time: one market for both.
+    assert seven == outside
+    assert seven["utility-model"] == {"designate-lp-for-all": False}
+    assert lp_for_all["utility-model"] == {"designate-lp-for-all": True}
+    assert "utility-model" not in pm.policy_market_settings(_policy())
+
+
+def test_list_lengths():
+    assert pm.utility_list_length("7") == 7
+    assert pm.utility_list_length("outside_option") is None
+    for value in ("real_length", "7.5", 7, None, "\u00b2"):
+        with pytest.raises(ValueError, match="list-length"):
+            pm.utility_list_length(value)
+
+
+def test_the_iteration_seed_is_the_simulators():
+    from assignment.student_assignment.market_generator.school_choice_market_generator import (
+        MarketGenerator,
+    )
+
+    for seed, iteration in ((2023, 0), (2023, 7), (0, 3), (17, 120)):
+        assert pm.iteration_seed(seed, iteration) == MarketGenerator.iteration_seed(
+            seed, iteration
+        )
+
+
+def _utility_market(rng, n=40, p=12):
+    market = _toy_market()
+    qualifies = rng.random((n, p)) < 0.8
+    designation = [rng.permutation(p)[: rng.integers(1, p)] + 1 for _ in range(n)]
+    start = np.zeros(n + 1, dtype=np.int64)
+    np.cumsum([len(d) for d in designation], out=start[1:])
+    selected = np.zeros((n, p), dtype=np.int32)
+    return pm.PolicyMarket(
+        **{
+            **{name: getattr(market, name) for name in market.__dataclass_fields__},
+            "program_ids": tuple(f"{10 * (j + 1)}-GE-KG" for j in range(p)),
+            "student_index": pd.Index([str(i) for i in range(n)], name="studentno"),
+            "selected": selected,
+            "attendance_area_ge": rng.integers(0, p + 1, size=n),
+            "qualifies": qualifies,
+            "access": np.zeros((n, p), dtype=np.int16),
+            "round_boost": np.zeros(n),
+            "designation_start": start,
+            "designation": np.concatenate(designation).astype(np.int32),
+            "reserve_classes": np.zeros(n, dtype=int),
+            "utility": rng.normal(-1.0, 2.0, size=(n, p)),
+        }
+    )
+
+
+@pytest.mark.parametrize(("scale", "outside"), [(1.0, False), (0.7, True), (0, True)])
+def test_utility_draws_replay_the_simulators_stream(scale, outside):
+    from assignment.student_assignment.market_generator.utility_model import (
+        UtilityModel,
+    )
+
+    market = _utility_market(np.random.default_rng(0))
+    model = UtilityModel("estimate.npy", None, None)
+    model._base_utility_cache_key = ("estimate.npy", None, None)
+    model._base_utility_matrix = market.utility
+    for iteration in (0, 4):
+        np.random.seed(pm.iteration_seed(2023, iteration))
+        model.draw_utility_model_randomness(
+            iteration, gumbel_scale=scale, outside_option=outside
+        )
+        lottery = np.random.rand(market.n, market.num_programs)
+        draw = market.utility_draws(
+            iteration, 2023, gumbel_scale=scale, outside_option=outside
+        )
+        np.testing.assert_array_equal(draw.utilities, model.original_utilities)
+        np.testing.assert_array_equal(draw.lottery, lottery)
+        if outside:
+            np.testing.assert_array_equal(draw.outside, model.outside_utilities)
+        else:
+            assert draw.outside is None
+
+
+@pytest.mark.parametrize("length", ["0", "1", "4", "outside_option"])
+def test_truncation_is_the_simulators(length):
+    from types import SimpleNamespace
+
+    from assignment.student_assignment.market_generator.preference_generator import (
+        PreferenceGenerator,
+    )
+
+    rng = np.random.default_rng(1)
+    market = _utility_market(rng)
+    draw = market.utility_draws(0, 5, outside_option=True)
+    eligible = market.qualifies & (rng.random(market.qualifies.shape) < 0.7)
+    simulator = SimpleNamespace(
+        n=market.n,
+        num_programs=market.num_programs,
+        config={"utility-model": {"enable": True, "list-length": length}},
+        grade="KG",
+        students=SimpleNamespace(student_data=None, attendance_area={}),
+        umodel=SimpleNamespace(
+            original_utilities=draw.utilities,
+            original_preferences=np.argsort(-draw.utilities, axis=1) + 1,
+            outside_utilities=draw.outside,
+        ),
+    )
+    expected = PreferenceGenerator(simulator)._truncate_utility_model_preferences(
+        eligible.astype(float)
+    )
+    actual = market.truncated_utility_lists(
+        eligible, draw.utilities, draw.outside, pm.utility_list_length(length)
+    )
+    assert actual.dtype == expected.dtype
+    np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    ("utility_model", "source", "required"),
+    [
+        (UTILITY_MODELS[0], "stated", "estimate"),
+        (None, "estimate", "stated"),
+    ],
+)
+def test_mid_needs_the_preference_source_the_policy_matches(
+    utility_model, source, required, monkeypatch
+):
+    """Submitted lists are ``stated``; lists drawn from the simulator's
+    utility estimate are ``estimate``."""
+    from types import SimpleNamespace
+
+    from optimization.data import mid
+
+    config = _policy(**{"utility-model": utility_model})
+    monkeypatch.setattr(mid, "policy_config", lambda optimization_config: config)
+
+    def no_market(*args, **kwargs):
+        raise AssertionError("a mismatched source must fail before loading data")
+
+    monkeypatch.setattr(mid, "load_policy_market", no_market)
+    optimization_config = SimpleNamespace(
+        mid_utility_handling="omit_nonpositive",
+        matching_policy="restrictive_aa_sib_ctip_reserves",
+        mid_preference_source=source,
+        data_scenario=None,
+    )
+    with pytest.raises(ValueError, match=f"set mid_preference_source: {required}"):
+        mid.build_mid_student_market(None, optimization_config)
