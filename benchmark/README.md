@@ -44,6 +44,86 @@ its steps; for example, five eight-worker tasks run concurrently in one
 task. Each allocation evaluates its optimization metrics and safely updates
 `summary.csv` and `stages.csv`. Local capacity and worker-pool settings are not used.
 
+Allocations do not get fixed chunks. Every allocation with the same worker
+count claims tasks from one shared queue, so the 12 jobs finish at about the
+same time. A claim is a file `<output_dir>/.slurm/claims/<task_id>.<gen>`
+created with `O_CREAT|O_EXCL`, which is atomic on NFS. It holds JSON: plan id,
+job id, host, pid, allocation index, `claimed_at`/`claimed_epoch`, `started`
+(false until the task's first process reports in and rewrites the claim with
+`started_at`), and `status` (`running`, `done`, or `released`). The highest
+generation is the live claim. A running claim is stale, and the next claimant
+takes it over by creating generation `gen+1`, in any of these cases:
+
+- the latest `squeue` read no longer lists its job as live (a `COMPLETING` or
+  `CANCELLED` job is not live), and the claim's heartbeat predates that read.
+  Each allocation reads `squeue` at start and again at each recovery check,
+  at most once a minute, so the claims of a job cancelled mid-run are freed
+  at the next check;
+- it names this job but another process (a requeued job's earlier run);
+- it is a local run's claim on this host and its pid is gone;
+- it never started and was claimed over 20 min ago (a safety net: its owner
+  releases it at 10 min);
+- its heartbeat mtime, touched every 60 s, is over 15 min old.
+
+A `released` claim is stale for everyone.
+
+An allocation claims a task only when a slot is free to start it, so it holds
+only the tasks it is running. When a task's process has not reported its start
+within 10 min of being submitted (`PHASE_START_TIMEOUT_SECONDS`), for example
+because a node recovering from an NFS incident cannot import the environment,
+the allocation releases the claim and abandons the task locally. The start
+report is a node-local token (`/dev/shm`) that the process and its allocation
+race to create with `O_EXCL`. If the allocation creates it first, the process
+returns without running anything when it finally starts. A released task
+therefore never runs twice. The abandoned process keeps its slot until it
+exits, so a stalled node claims nothing new, and tasks that did start keep
+running. The node starts claiming again once its processes start.
+
+An allocation with nothing left to claim does not exit while another
+allocation holds an unstarted claim, which may still be released, or a claim
+whose job `squeue` no longer lists but whose heartbeat is newer than the read,
+which goes stale at the next read. It rechecks every 30 s for up to 30 min,
+then exits. It exits at once when every remaining claim belongs to a live job
+that has started it.
+
+A `done` claim is final for its plan and stale for a regenerated one, so a
+resubmit replans and `task_phases` (`skip_existing`, `rerun_failed`, matching
+markers) decides what is left. Do not delete `.slurm/claims` while jobs run.
+
+The plan stores tasks in claim order: longest first (by the sum of their step
+time limits), and, among equally long tasks, tasks sharing a policy market
+(data block x `matching_policy`) next to each other. An allocation also prefers
+a market, then a dataset, that it has already loaded.
+
+A task's optimize and evaluate phases share one process. The evaluation reuses
+the in-memory dataset, stages, and manifest after the solver is released.
+Match runs in a fresh process. A run optimized but not evaluated (a crash
+between phases) is evaluated standalone. Before the fan-out, each allocation
+peeks (without claiming) at the tasks it would claim first and warms each
+distinct dataset among them once, one process per dataset
+(`benchmark/warmup.py`: tables, graph levels, and the policy market per
+`matching_policy`). A slot does not claim a task whose dataset is still
+warming. Another task of the same length may take the slot instead; if none
+is left, the slot waits. The first tasks then start 1 s apart. Set
+`BENCHMARK_SLURM_WARM=0` to skip the warm-up.
+
+Phase processes fork from a `forkserver` that imports the environment once
+per allocation (`FORKSERVER_PRELOAD`: numpy, scipy, pandas, shapely, pyproj,
+geopandas, networkx, numba, OR-Tools CP-SAT, matplotlib, and the project's
+`loaders`, `optimization`, `metrics`, `assignment` evaluation, and
+`benchmark` modules). Spawned processes would each re-import all of it from
+NFS. Every phase still gets a fresh process (`max_tasks_per_child=1`). Each
+process drops the pyproj context it inherited, whose PROJ database connection
+was opened in the server, and opens its own. The numba kernels are imported
+but not compiled in the server. Set `BENCHMARK_SLURM_START_METHOD=spawn` to go
+back to spawned processes. The allocation log has one `start task=... unit=...
+startup=...` line per process, giving the time from submit to the process
+running.
+
+Every phase writes its start, end, wall and CPU seconds, and peak RSS to the
+run's `phase_timings.json` and prints one `phase task=... wall=... cpu=...
+peak_rss=...` line to the allocation log. Jobs request `--mem-per-cpu=4G`.
+
 The complete graph has at most 20 submitted jobs. With assignment metrics
 enabled, the eight downstream slots hold up to four assignment jobs, three
 metrics jobs, and one finalizer. Without assignment metrics, all eight slots

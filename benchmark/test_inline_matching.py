@@ -275,3 +275,29 @@ def test_aggregation_rebuilds_matching_reports_only_when_asked(tmp_path):
     aggregate_results(str(tmp_path), summary_csv="summary.csv", matching_dir="assignments")
     assert (tmp_path / "assignments/aggregate_metrics/metrics_citywide.csv").is_file()
     assert (tmp_path / "summary.csv").is_file()
+
+
+def test_an_allocation_matching_phase_is_timed_in_the_run_folder(
+    tmp_path, monkeypatch, optimization_scenario, capsys
+):
+    from benchmark.runner import PHASE_TIMINGS_FILENAME, load_phase_timings
+    from benchmark.slurm import _run_matching_task
+
+    matching = _matching(tmp_path)
+    task = _task(tmp_path, "abc", policy="ctip")
+    _write_evaluated_run(task)
+    monkeypatch.setattr(
+        "benchmark.assignment.run_generated_zone_assignments",
+        lambda *args, **kwargs: None,
+    )
+
+    result = _run_matching_task(task, matching)
+
+    assert result.status == "COMPLETE"
+    assert matching_complete(task, matching)
+    # The match record sits beside, not inside, the matching folder it
+    # clears, so it survives its own phase.
+    assert (Path(task.output_dir) / PHASE_TIMINGS_FILENAME).is_file()
+    record = load_phase_timings(task.output_dir)["phases"]["match"]
+    assert record["status"] == "COMPLETE"
+    assert "phase task=abc phase=match status=COMPLETE" in capsys.readouterr().out

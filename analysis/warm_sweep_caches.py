@@ -18,6 +18,13 @@ Run it from the checkout the sweep will run from, since source hashes are
 taken relative to it:
 
     uv run python analysis/warm_sweep_caches.py SWEEP.yaml --output-dir DIR
+
+``--direct`` skips the cut-down run and builds only the shared data caches
+(dataset tables, graph levels, and the policy market per data block and
+``matching_policy``) through :mod:`benchmark.warmup`, the same warm-up each
+Slurm allocation runs before its fan-out. It writes nothing under
+``--output-dir`` and is much cheaper, but leaves the per-run caches (closer-
+neighbor supports, map geometry) to the sweep.
 """
 
 from __future__ import annotations
@@ -54,6 +61,11 @@ def parse_args() -> argparse.Namespace:
         help="Parallel tasks (default: the Slurm allocation's CPUs)",
     )
     parser.add_argument(
+        "--direct",
+        action="store_true",
+        help="Warm only datasets, graphs, and policy markets (benchmark.warmup)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Write the cut-down configs and list tasks",
@@ -81,9 +93,32 @@ def _cut_task(task: dict, time_limit: float) -> dict:
     return task
 
 
+def warm_direct(sweep_path: Path, max_workers: int | None, dry_run: bool) -> int:
+    """Warm each distinct dataset of the sweep once, in parallel processes."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    from benchmark.config import SimulationSweep
+    from benchmark.warmup import format_warm_summary, warm_dataset, warm_specs_for_tasks
+
+    specs = warm_specs_for_tasks(SimulationSweep.from_yaml(str(sweep_path)).generate_tasks())
+    print(f"{len(specs)} dataset(s) to warm", flush=True)
+    if dry_run:
+        for spec in specs:
+            print(f"  {spec.key[:12]} levels={spec.levels} policies={spec.policies}")
+        return 0
+    failures = 0
+    with ProcessPoolExecutor(max_workers=max_workers or 1, max_tasks_per_child=1) as pool:
+        for summary in pool.map(warm_dataset, specs):
+            print(format_warm_summary(summary), flush=True)
+            failures += bool(summary.get("errors"))
+    return int(failures > 0)
+
+
 def main() -> int:
     args = parse_args()
     sweep_path = Path(args.sweep).resolve()
+    if args.direct:
+        return warm_direct(sweep_path, args.max_workers, args.dry_run)
     out = Path(args.output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
     raw = yaml.safe_load(sweep_path.read_text())

@@ -15,7 +15,13 @@ from loaders import normalize_grade
 #: migrated: carrying both columns is the whole point, so back-filling one
 #: from the other would quietly report the convention where it was never
 #: applied -- on exactly the top-choice metric these scenarios are quoted on.
-ASSIGNMENT_SCHEMA_VERSION = 3
+#:
+#: 4 moved a policy variant's lotteries from one ``*_iteration<N>.csv`` each
+#: into one gzipped long-format file (``lottery_files``), which leaves out the
+#: constant and derivable columns. The rows mean exactly what they meant under
+#: 3, so per-lottery files saved under 3 stay readable and are read as 4.
+ASSIGNMENT_SCHEMA_VERSION = 4
+READABLE_ASSIGNMENT_SCHEMA_VERSIONS = (3, ASSIGNMENT_SCHEMA_VERSION)
 LISTED_RANK_BASIS = "listed"
 UTILITY_RANK_BASIS = "utility"
 RANK_BASES = {LISTED_RANK_BASIS, UTILITY_RANK_BASIS}
@@ -156,6 +162,8 @@ def listed_preference_rank_matrix(
         if "grade" in student_data
         else None
     )
+    grade_cache: dict = {}
+    school_cache: dict = {}
     for row_position in range(len(student_data)):
         schools = _list_value(school_values[row_position], school_column)
         program_types = _list_value(program_values[row_position], program_column)
@@ -179,7 +187,7 @@ def listed_preference_rank_matrix(
 
         numeric_ranks = _validated_ranks(ranks, rank_column or "preference position")
         grade = (
-            normalize_grade(grade_values[row_position])
+            _cached_grade(grade_values[row_position], grade_cache)
             if grade_values is not None
             else None
         )
@@ -189,7 +197,10 @@ def listed_preference_rank_matrix(
         for school, program_type, rank in zip(
             schools, program_types, numeric_ranks, strict=True
         ):
-            school_type = (_school_key(school), str(program_type).strip().upper())
+            school_type = (
+                _cached_school_key(school, school_cache),
+                str(program_type).strip().upper(),
+            )
             key = (*school_type, grade)
             if key in seen_choices:
                 raise ValueError(
@@ -289,11 +300,14 @@ def promotion_first_choice_ranks(
     # A missing mr_applicant is read as "applied": the convention only ever
     # improves a reported rank, so the silent direction has to be off.
     applicant = pd.to_numeric(student_data["mr_applicant"], errors="coerce")
-    for row, (claim, applied, match) in enumerate(
-        zip(student_data["promote"], applicant, matches, strict=True)
-    ):
-        if applied != 0 or not match > 0:
-            continue
+    # Only non-applicants holding a seat can be affected, so the claim lists
+    # of everyone else are never parsed (``applied != 0`` is true for NaN).
+    candidates = np.flatnonzero(
+        (applicant.to_numpy(dtype=float, na_value=np.nan) == 0) & (matches > 0)
+    )
+    claims = student_data["promote"].to_numpy(dtype=object)
+    for row in candidates:
+        claim, match = claims[row], matches[row]
         claimed = {
             program_indices.get(program_id)
             for program_id in _list_value(claim, "promote")
@@ -313,14 +327,19 @@ def ranks_from_preference_order(
         raise ValueError("Preference order and matches do not align by student.")
 
     ranks = np.full(len(matches), np.nan, dtype=float)
-    for student in np.flatnonzero(matches > 0):
-        positions = np.flatnonzero(preferences[student] == matches[student])
-        if len(positions) != 1:
-            raise ValueError(
-                f"Assigned program {matches[student]} occurs {len(positions)} times "
-                f"in preference row {student}."
-            )
-        ranks[student] = int(positions[0]) + 1
+    students = np.flatnonzero(matches > 0)
+    if not len(students):
+        return ranks
+    hits = preferences[students] == matches[students, None]
+    counts = hits.sum(axis=1)
+    wrong = np.flatnonzero(counts != 1)
+    if len(wrong):
+        student = students[wrong[0]]
+        raise ValueError(
+            f"Assigned program {matches[student]} occurs {counts[wrong[0]]} times "
+            f"in preference row {student}."
+        )
+    ranks[students] = hits.argmax(axis=1) + 1
     return ranks
 
 
@@ -331,9 +350,11 @@ def _validate_canonical_rank_columns(
     schema_version = pd.to_numeric(
         assignments["assignment_schema_version"], errors="coerce"
     )
-    if not schema_version.eq(ASSIGNMENT_SCHEMA_VERSION).all():
+    if not schema_version.isin(READABLE_ASSIGNMENT_SCHEMA_VERSIONS).all():
         raise ValueError(
-            f"Assignments require rank schema version {ASSIGNMENT_SCHEMA_VERSION}."
+            "Assignments require rank schema version "
+            f"{ASSIGNMENT_SCHEMA_VERSION} (or the equivalent "
+            f"{READABLE_ASSIGNMENT_SCHEMA_VERSIONS[:-1]})."
         )
     assignments["assignment_schema_version"] = ASSIGNMENT_SCHEMA_VERSION
 
@@ -465,6 +486,28 @@ def _program_by_choice_key(
     return result, result_by_school_type
 
 
+def _cached_grade(value, cache: dict) -> str:
+    try:
+        return cache[value]
+    except KeyError:
+        grade = cache[value] = normalize_grade(value)
+        return grade
+    except TypeError:  # unhashable
+        return normalize_grade(value)
+
+
+def _cached_school_key(value, cache: dict) -> str:
+    # Keyed by type too, so 1 and 1.0 and "1" each take their own validation.
+    try:
+        key = (type(value), value)
+        return cache[key]
+    except KeyError:
+        result = cache[key] = _school_key(value)
+        return result
+    except TypeError:
+        return _school_key(value)
+
+
 def _school_key(value) -> str:
     try:
         number = float(str(value).strip())
@@ -494,6 +537,36 @@ def _list_value(value, column: str) -> list:
 
 
 def _validated_ranks(values: list, column: str) -> list[int]:
+    # Fast path for the loader's plain integer (or integral float) ranks: the
+    # pandas route below allocated a Series per student, which was ~9 s per
+    # rank matrix on a kindergarten market. Anything else takes that route,
+    # so the accepted values and the error raised are unchanged.
+    ranks = []
+    for value in values:
+        if type(value) is int or (
+            isinstance(value, np.integer) and not isinstance(value, np.bool_)
+        ):
+            number = int(value)
+        elif type(value) is float or isinstance(value, np.floating):
+            if not np.isfinite(value) or not float(value).is_integer():
+                ranks = None
+                break
+            number = int(value)
+        else:
+            ranks = None
+            break
+        if number <= 0:
+            ranks = None
+            break
+        ranks.append(number)
+    if ranks is not None:
+        if len(ranks) != len(set(ranks)):
+            raise ValueError(f"{column} contains duplicate preference ranks.")
+        return ranks
+    return _validated_ranks_slow(values, column)
+
+
+def _validated_ranks_slow(values: list, column: str) -> list[int]:
     numeric = pd.to_numeric(pd.Series(values, dtype=object), errors="coerce")
     invalid = (
         numeric.isna() | ~np.isfinite(numeric) | (numeric <= 0) | (numeric % 1 != 0)

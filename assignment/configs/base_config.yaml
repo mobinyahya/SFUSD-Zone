@@ -1,6 +1,13 @@
 
+# Unset on purpose: every matching config must choose, with
+# utility-model.enable true (lists drawn from the utility model each lottery)
+# or false (the submitted lists). A config that leaves it unset fails schema
+# validation; the per-user default config the Configerator writes from this
+# file keeps it true, as before. The optimizer's MID market (optimization/data/mid.py), which
+# reads only this file and the policy config, takes unset as the submitted
+# lists and rejects true.
 utility-model:
-  enable: true
+  enable: null
   list-length: "7"
 
 save-assignment: true

@@ -753,3 +753,27 @@ def test_unreported_ethnicities_reach_the_area_table(tmp_path, scenario_factory)
     assert by_block.loc[1002, "Ethnicity_Missing"] == 1.0
     assert by_block["Ethnicity_Decline_To_State"].sum() == 0.0
     assert by_block["Ethnicity_Hispanic/Latinx"].sum() == 0.0
+
+
+def test_area_student_stats_are_the_aggregated_student_rows(tmp_path, scenario_factory):
+    cfg = _ingest(
+        _student_scenario(tmp_path, scenario_factory, program_population="All")
+    )
+
+    stats = loaders.load_area_student_stats(cfg)
+    expected = loaders._aggregate_students(loaders.load_students(cfg), cfg)
+    expected["Block"] = expected["Block"].astype(int)
+
+    pd.testing.assert_frame_equal(stats, expected)
+
+
+def test_scenario_tables_are_copies(scenario_factory):
+    # The loaders.tables memo serves repeated reads; each caller gets its own
+    # frame, so a caller's edits never reach the next one.
+    scenario = scenario_factory()
+    first = loaders.load_school_table(scenario)
+    original = first.copy()
+    first.iloc[0, 0] = None
+    second = loaders.load_school_table(scenario)
+
+    pd.testing.assert_frame_equal(second, original)

@@ -1,0 +1,185 @@
+# Cross-evaluation of every seed-1 11-18 map on the Nov 13 ideal baseline.
+#
+# As 11-18_crosseval_nov13.yaml, but with the maps 11-18 drew for all four Nov 13
+# populations (applied_or_enrolled, enrolled_all, applicant, enrolled; 4 policies
+# x 5 FRL weights each = 80 maps), plus today's 2013 attendance areas, scored and
+# matched under every Nov 13 population and every matching policy:
+# 81 x 4 x 4 = 1,296 runs. The 656 runs of 11-18_crosseval_nov13.yaml are a
+# subset with the same task ids.
+#
+# Run: uv run python -m benchmark.slurm submit --config benchmark/configs/attendance_areas/11-18_crosseval_nov13_all_pops.yaml
+
+name: attendance_areas_11-18_crosseval_nov13_all_pops
+mode: run
+optimization_defaults:
+  centroids_type: all
+  hints: voronoi
+  workers: 1
+  save_solver_logs: false
+  save_solver_progress: false
+  mid_preference_source: stated
+  capacity_match_unassigned_weight: 1
+  capacity_match_designated_weight: 0
+sweep:
+  data:
+  - scenario: attendance-areas-2627
+    overrides:
+      filters:
+        optimization:
+          capacity_scenario: ideal_baseline_nov_13_2026
+          student_population: applied_or_enrolled
+        assignment:
+          capacity_scenario: ideal_baseline_nov_13_2026
+          student_population: applied_or_enrolled
+  - scenario: attendance-areas-2627
+    overrides:
+      filters:
+        optimization:
+          capacity_scenario: ideal_baseline_nov_13_2026
+          student_population: applicant
+        assignment:
+          capacity_scenario: ideal_baseline_nov_13_2026
+          student_population: applicant
+  - scenario: attendance-areas-2627
+    overrides:
+      filters:
+        optimization:
+          capacity_scenario: ideal_baseline_nov_13_2026
+          student_population: enrolled
+        assignment:
+          capacity_scenario: ideal_baseline_nov_13_2026
+          student_population: enrolled
+  - scenario: attendance-areas-2627
+    overrides:
+      filters:
+        optimization:
+          capacity_scenario: ideal_baseline_nov_13_2026
+          student_population: enrolled_all
+        assignment:
+          capacity_scenario: ideal_baseline_nov_13_2026
+          student_population: enrolled_all
+tasks:
+- seed: 1
+  hint_zoning:
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_eaabaa25/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_561df0db/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_acd807c2/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_30c99f07/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_bfa58e7e/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_36cfc2a4/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_f4ba959f/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_d713f151/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_e8317258/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_c37964ab/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_ce0e298e/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_60a9e149/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_62459071/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_7ebc67e7/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_18a52623/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_f9f8c058/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_582cf4bf/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_2b08c16b/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_e8cc94e0/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_e0ab1920/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_82224050/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_01b4ab51/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_b98c30ff/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_8eaa1d2a/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_b5874281/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_9b5a17cd/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_0463cce0/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_f9a88acd/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_1bb90ae8/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_8285c9b5/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_2fcc70b9/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_fe2919c0/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_1d5cd1f7/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_5a824537/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_45211c8c/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_c3beed11/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_f78da52b/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_94b19d32/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_9a41479a/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_b9269693/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_ea467cd5/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_8bc10c63/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_ff0e33a4/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_0794aec0/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_d8145abd/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_e3bbfa35/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_c3585d50/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_d59799ef/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_0541b1e9/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_f49117bc/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_097eea35/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_36fd949a/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_d488b51e/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_1c4942b8/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_10fd1c24/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_372cd242/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_3b8167c7/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_8e3c26f4/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_2fbf13cf/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_76064660/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_89bfc95c/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_3a553abd/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_b4bf34c8/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_a631c34b/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_5511a069/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_2198c74a/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_f15335e9/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_b7c22d9a/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_0117b273/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_d9fd8bfb/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_5452d23c/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_15435294/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_8d250569/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_c2501aa1/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_36b0f313/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_f806d161/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_993e0b8b/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_9dc45c7f/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_908ebedd/zonings.json.xz
+  - /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18/all/seed1/frl1_racial1/overage0.1_shortage0.1/pipeline_cp_int_Block_1-Block_0-Block_0_tl_60.0_d09d895b/zonings.json.xz
+  - attendance_areas
+  matching_policy:
+  - restrictive_aa_sib_ctip
+  - restrictive_aa_sib_ctip_reserves
+  - restrictive_aa_sib_no_ctip
+  - restrictive_aa_sib_no_ctip_reserves
+  objective_weights:
+    capacity_match: 1
+    frl_dissimilarity: 1
+  constraints:
+    frl_dev: -1
+    racial_dev: -1
+    overage: -1
+    shortage: -1
+    max_distance: .inf
+    boundary_prop: -1
+    min_zone_residents: -1
+  steps:
+  - name: evaluate
+    level: Block_0
+    method: recom
+    objective: weighted_sum
+    time_limit: 60
+    options:
+      workers: 1
+      recom_iterations: 0
+execution:
+  output_dir: /soalnas/share/data/school_choice/local_runs/attendance_areas_11-18_crosseval_nov13_all_pops
+  skip_existing: true
+  rerun_failed: true
+  sequential: false
+metrics:
+  strict: true
+  compute_stage_metrics: false
+  summary_csv: summary.csv
+  stages_csv: stages.csv
+visualization:
+  enabled: false
+matching:
+  enabled: true
+  config: ../../../assignment/configs/attendance_areas/restrictive_aa_sib_2627_crosseval.yaml
+  compute_stage_assignments: false

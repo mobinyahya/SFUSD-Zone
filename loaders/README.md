@@ -922,6 +922,58 @@ length or positivity. Applying the edges later fails if an endpoint is absent
 from the target base graph. Additional map fields are ignored by the runtime
 loader.
 
+## Normalised-Table Cache
+
+`load_student_records`, `load_school_records`, `load_program_records`,
+`load_census_geometry`, and `load_geography_crosswalk` cache their output
+(`loaders/table_cache.py`), because every sweep phase starts a fresh process
+that would otherwise re-read and re-normalise the same CSVs and shapefiles.
+
+| Namespace | Payload | Keyed on |
+|---|---|---|
+| `loader_students/v1/<key>/` | `table.pkl` | role, filter group, `read_csv` options |
+| `loader_schools/v1/<key>/` | `table.pkl` | role, filter group, `read_csv` options |
+| `loader_programs/v1/<key>/` | `table.pkl` | role, filter group, `read_csv` options |
+| `loader_census_geometry/v1/<key>/` | `table.pkl` | group, unit, vintage |
+| `loader_geography_crosswalk/v1/<key>/` | `table.pkl` | group, vintage |
+
+Every key also covers the content checksums (and, for `path_and_checksum`
+sources, paths) of each source role the build may resolve; the filter values
+it may read (the whole group's filters, its selected capacity adjustments and
+planned schools, for the three tables; `geography_vintage` for geography); a
+SHA-256 of the loader source files; and the Python, numpy, pandas, geopandas,
+shapely, pyogrio and pyproj versions. The `v1` is
+`table_cache.TABLE_CACHE_SCHEMA_VERSION`. A table's roles are its own role and
+`<role>.catalog`, the group's `capacity`, `frl_estimate` and `schools` roles,
+the selected vintage's Census layers and crosswalk, and, for the assignment
+group, `assignment.attendance_area_fill`.
+
+The key is checked against the build: `DataScenario` reports every role it
+resolves and every filter it reads while a build runs, and an entry whose build
+read anything its key does not name is neither saved nor memoised (with a
+`RuntimeWarning`), so a key can be too wide but never stale.
+
+Entries are protocol-5 pickles written through `CacheStore`. One process builds
+an entry under the key's `.<key>.build.lock`; any other process that wants it
+waits there and then loads it. Each process also keeps the pickled bytes in an
+in-process LRU memo (at most 256 MB; one 2026-27 scenario's tables take about
+5 MB) and unpickles a fresh copy per call, so callers may mutate returned
+frames, list cells included.
+
+`SFUSD_TABLE_CACHE` selects the levels: unset, `1` or `on` uses both; `memory`
+keeps only the in-process memo; `0`, `off`, `false` or `no` computes every
+call. Any cache failure falls back to computing the table; an error raised by
+the build propagates unchanged. `loaders.clear_table_memo()` empties the memo.
+
+**Loader warnings** are `loaders.LoaderWarning` (a `UserWarning`). A build
+stores the messages it emitted, and a hit replays them, so a cached table warns
+exactly like a computed one. Each distinct message is shown once per process
+(a registry in `table_cache.loader_warn`, since `warnings.catch_warnings`
+clears the interpreter's own `once` registry). A filter that resolves the
+category to `always` or `error`, such as `pytest.warns`, still sees every
+emission. A worker that sets `warnings.simplefilter("always")` itself can call
+`loaders.show_loader_warnings_once()` afterwards to restore once-per-process.
+
 ## Validation
 
 The primary contract tests are in `loaders/tests/test_config.py`. Run the full

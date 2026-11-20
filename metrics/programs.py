@@ -6,10 +6,9 @@ from collections.abc import Iterable
 from typing import Any
 
 from Config.Constants import PROGRAM_CATEGORIES
-from loaders.tables import load_program_records
 from metrics.base import MetricOutput, MetricsContext
 from metrics.columns import MetricColumns
-from optimization.data.loaders import PROGRAM_ROLE
+from optimization.data.loaders import load_program_table
 
 LANGUAGE_PROGRAMS = set(PROGRAM_CATEGORIES["Language Programs"])
 SPECIAL_EDUCATION = set(PROGRAM_CATEGORIES["Special Education"])
@@ -89,12 +88,7 @@ def school_programs(context: MetricsContext) -> dict[int, list[str]]:
     if from_graph or context.data_scenario is None:
         return from_graph
 
-    programs = load_program_records(
-        context.data_scenario,
-        PROGRAM_ROLE,
-        filter_group="optimization",
-        low_memory=False,
-    )
+    programs = load_program_table(context.data_scenario)
     programs = programs.dropna(subset=["school_id", "program_type"])
     return {
         int(school_id): sorted(set(group.astype(str)))

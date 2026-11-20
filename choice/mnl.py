@@ -9,7 +9,7 @@ from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
-from loaders import DataScenario, load_student_records
+from loaders import DataScenario
 from scipy.special import logsumexp
 
 from choice.estimate import (
@@ -230,12 +230,8 @@ class MNLChoiceModel(ChoiceModel):
     def _load_tables(
         self,
     ) -> tuple[pd.DataFrame, pd.DataFrame, dict[int, list[str]]]:
-        student_df = load_student_records(
-            self.data,
-            "assignment.students",
-            filter_group="assignment",
-            low_memory=False,
-        )
+        # Shared with the dataset's attendance-area hint, in process.
+        student_df = optimization_loaders.load_assignment_students(self.data)
         if "studentno" not in student_df.columns:
             paths = [
                 str(source.path) for source in self.data.sources("assignment.students")
@@ -285,7 +281,12 @@ class MNLChoiceModel(ChoiceModel):
                 "not a welfare measurement. Fit an estimate for this cohort, or "
                 "read the choice metrics as unavailable rather than as zero"
             )
-        warnings.warn(detail + ".", stacklevel=2)
+        from loaders.table_cache import first_in_shared_dir
+
+        # Every run of a sweep reloads the same estimate; under Slurm the
+        # allocation shows the warning once, not once per run.
+        if first_in_shared_dir(detail):
+            warnings.warn(detail + ".", stacklevel=2)
 
     def _merged(self) -> pd.DataFrame:
         """Selected students joined to their estimate rows (inner join)."""

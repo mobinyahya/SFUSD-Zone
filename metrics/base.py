@@ -132,20 +132,37 @@ class MetricsContext:
         """
         if self.data_scenario is None:
             return None
-        from optimization.data.loaders import IngestConfig, load_area_table
+        from optimization.data.loaders import (
+            EXCLUDED_OPTIMIZATION_BLOCKS,
+            IngestConfig,
+            load_area_student_stats,
+        )
 
         unit = self.solution.level.unit
-        area = load_area_table(IngestConfig(unit=unit, data=self.data_scenario))
-        by_area = area.set_index(unit)[SUPPLEMENTARY_ETHNICITIES].to_dict("index")
+        # The area table's student columns without its school, centroid and
+        # empty-area rows: an area missing here has zero of every group there.
+        stats = load_area_student_stats(
+            IngestConfig(unit=unit, data=self.data_scenario)
+        )
+        if unit == "Block":
+            stats = stats.loc[~stats[unit].isin(EXCLUDED_OPTIMIZATION_BLOCKS)]
+        stats = stats.set_index(unit)[SUPPLEMENTARY_ETHNICITIES].fillna(0)
+        by_area = {
+            ethnicity: dict(zip(stats.index.tolist(), stats[ethnicity].tolist()))
+            for ethnicity in SUPPLEMENTARY_ETHNICITIES
+        }
         counts: dict[int, dict[str, float]] = {}
         for node, attrs in self.G.nodes(data=True):
             area_ids = (
                 [attrs["area_id"]] if "area_id" in attrs else attrs.get("block_ids", [])
             )
-            totals = dict.fromkeys(SUPPLEMENTARY_ETHNICITIES, 0.0)
-            for area_id in area_ids:
-                for ethnicity, value in by_area.get(int(area_id), {}).items():
-                    totals[ethnicity] += float(value)
+            area_ids = [int(area_id) for area_id in area_ids]
+            totals = {}
+            for ethnicity, column in by_area.items():
+                total = 0.0
+                for area_id in area_ids:
+                    total += float(column.get(area_id, 0.0))
+                totals[ethnicity] = total
             counts[int(node)] = totals
         return counts
 

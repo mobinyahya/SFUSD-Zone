@@ -7,11 +7,13 @@ import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import shutil
 import tempfile
+import warnings
 from typing import Any, Mapping
 
 from assignment.generated_zones import (
@@ -47,6 +49,7 @@ MATCHING_DIRNAME = "matching"
 MATCHING_COMPLETE_FILENAME = "matching_complete.json"
 MATCHING_SCHEMA_VERSION = 1
 AGGREGATE_METRICS_DIRNAME = "aggregate_metrics"
+
 
 @dataclass
 class AssignmentBatchResult:
@@ -559,12 +562,18 @@ def run_task_matching(task: BenchmarkTask, matching: MatchingRunConfig) -> str:
     ]
     folder = matching_dir(root)
     if ready:
-        run_generated_zone_assignments(
-            matching.config,
-            ready,
-            assignment_folder=folder,
-            workers=1,
-        )
+        with warnings.catch_warnings():
+            # A sweep matches every run in its own data by design; the
+            # matching config's placeholder data block is always replaced.
+            warnings.filterwarnings(
+                "ignore", message="The matching config's data is ignored"
+            )
+            run_generated_zone_assignments(
+                matching.config,
+                ready,
+                assignment_folder=folder,
+                workers=1,
+            )
     status = "complete" if ready else "skipped"
     write_json(
         str(folder / MATCHING_COMPLETE_FILENAME),
@@ -579,7 +588,10 @@ def run_task_matching(task: BenchmarkTask, matching: MatchingRunConfig) -> str:
 
 
 def aggregate_matching_metrics(
-    root_folder: str | Path, assignment_dir: str
+    root_folder: str | Path,
+    assignment_dir: str,
+    *,
+    run_dirs: list[str] | None = None,
 ) -> dict[str, int] | None:
     """Rebuild the sweep's ``metrics_*.csv`` from its runs' own reports.
 
@@ -598,21 +610,29 @@ def aggregate_matching_metrics(
         MarketGenerator,
     )
 
+    from benchmark.results import _read_parallel
+
     files = MarketGenerator.AGGREGATE_METRIC_FILES
     root = Path(root_folder).expanduser().resolve()
     sources: dict[str, list[Path]] = {name: [] for name in files}
     matched_runs = 0
-    for run_dir in discover_run_dirs(str(root)):
+
+    def run_reports(run_dir):
         marker = _read_matching_marker(run_dir)
         if marker is None or marker.get("status") != "complete":
-            continue
+            return {}
         metrics_dir = matching_dir(run_dir) / AGGREGATE_METRICS_DIRNAME
-        found = False
-        for name, filename in files.items():
-            if (metrics_dir / filename).is_file():
-                sources[name].append(metrics_dir / filename)
-                found = True
-        matched_runs += found
+        return {
+            name: metrics_dir / filename
+            for name, filename in files.items()
+            if (metrics_dir / filename).is_file()
+        }
+
+    folders = discover_run_dirs(str(root)) if run_dirs is None else run_dirs
+    for reports in _read_parallel(run_reports, folders):
+        for name, path in reports.items():
+            sources[name].append(path)
+        matched_runs += bool(reports)
     if not matched_runs:
         return None
 
@@ -623,11 +643,19 @@ def aggregate_matching_metrics(
         tempfile.mkdtemp(prefix="aggregate_metrics.tmp.", dir=output_root)
     )
     try:
-        row_counts = {
-            name: _concatenate_metric_csvs(paths, staging_dir / files[name])
-            for name, paths in sources.items()
-            if paths
-        }
+        # The reports are built side by side: each is bound by NFS round
+        # trips, not by CPU, so together they take about as long as one.
+        from concurrent.futures import ThreadPoolExecutor
+
+        names = [name for name, paths in sources.items() if paths]
+        with ThreadPoolExecutor(max_workers=max(1, len(names))) as executor:
+            futures = {
+                name: executor.submit(
+                    _concatenate_metric_csvs, sources[name], staging_dir / files[name]
+                )
+                for name in names
+            }
+            row_counts = {name: futures[name].result() for name in names}
         with (staging_dir / MarketGenerator.AGGREGATE_MANIFEST_FILENAME).open(
             "w", encoding="utf-8"
         ) as stream:
@@ -663,20 +691,58 @@ def aggregate_matching_metrics(
     return row_counts
 
 
+#: Per-run files read ahead while one is written. Reads are NFS round trips
+#: (about 0.25 s each from a compute node), so overlapping them is what makes
+#: an aggregation of a thousand runs take a minute rather than half an hour.
+CONCAT_READ_AHEAD = 16
+
+
+def _head_record(path: Path) -> tuple[list[str] | None, list[str] | None]:
+    """A CSV's header and first row (``None`` where absent)."""
+    with path.open(newline="", encoding="utf-8") as stream:
+        reader = csv.reader(stream)
+        return next(reader, None), next(reader, None)
+
+
+def _read_ahead(paths: list[str]):
+    """Yield ``(path, bytes)`` in order, reading up to CONCAT_READ_AHEAD ahead."""
+    from collections import deque
+    from concurrent.futures import ThreadPoolExecutor
+
+    def read(path: str) -> bytes:
+        with open(path, "rb") as raw:
+            return raw.read()
+
+    with ThreadPoolExecutor(max_workers=CONCAT_READ_AHEAD) as executor:
+        pending = deque()
+        for path in paths:
+            pending.append((path, executor.submit(read, path)))
+            if len(pending) >= CONCAT_READ_AHEAD:
+                done_path, future = pending.popleft()
+                yield done_path, future.result()
+        while pending:
+            done_path, future = pending.popleft()
+            yield done_path, future.result()
+
+
 def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
-    """Concatenate per-run metric CSVs in ``config_name`` order, row by row.
+    """Concatenate per-run metric CSVs in ``config_name`` order.
 
     Columns are the union of the runs' headers in first-seen order (the
     finalizer's rule); a run missing a column gets an empty cell, which is how
-    pandas writes a missing value. Fields go back out through the csv module
-    pandas writes with, so every value keeps its text. Returns the row count.
+    pandas writes a missing value. A run whose header is the union already
+    is copied byte for byte (most of an aggregation's time otherwise goes to
+    re-parsing gigabytes of CSV); any other run's fields go back out through
+    the csv module pandas writes with, so every value keeps its text. Each
+    run's rows are in ``config_name`` order (the simulator writes them so);
+    runs must not interleave: one run's first name may not come before the
+    previous run's last. Files are read on threads ahead of the writer
+    (:data:`CONCAT_READ_AHEAD`). Returns the row count.
     """
+    from benchmark.results import _read_parallel
+
     sources = []
-    for path in paths:
-        with path.open(newline="", encoding="utf-8") as stream:
-            reader = csv.reader(stream)
-            header = next(reader, None)
-            first = next(reader, None)
+    for path, (header, first) in zip(paths, _read_parallel(_head_record, list(paths))):
         if header is None:
             continue
         if "config_name" not in header:
@@ -684,6 +750,7 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
         key = "" if first is None else first[header.index("config_name")]
         sources.append((key, str(path), header))
     sources.sort()
+    headers = {path: header for _key, path, header in sources}
     columns = list(
         dict.fromkeys(column for _key, _path, header in sources for column in header)
     )
@@ -692,34 +759,79 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
     with output.open("w", newline="", encoding="utf-8") as out:
         writer = csv.writer(out, lineterminator="\n")
         writer.writerow(columns)
-        for _key, path, header in sources:
+        for path, data in _read_ahead([path for _key, path, _header in sources]):
+            header = headers[path]
             config_index = header.index("config_name")
-            positions = (
-                None
+            copied = (
+                _copy_csv_body(data, out, config_index, header)
                 if header == columns
-                else [
-                    header.index(column) if column in header else None
-                    for column in columns
-                ]
+                else None
             )
-            with open(path, newline="", encoding="utf-8") as stream:
-                reader = csv.reader(stream)
-                next(reader)
-                for row in reader:
-                    name = row[config_index]
-                    if previous is not None and name < previous:
+            if copied is not None:
+                first_name, last_name, count = copied
+                if count:
+                    if previous is not None and first_name < previous:
                         raise ValueError(
-                            f"Run metric reports interleave config names ({name!r} "
-                            f"after {previous!r} in {path}), so they cannot be "
-                            "concatenated in order."
+                            f"Run metric reports interleave config names "
+                            f"({first_name!r} after {previous!r} in {path}), so they "
+                            "cannot be concatenated in order."
                         )
-                    previous = name
-                    writer.writerow(
-                        row
-                        if positions is None
-                        else ["" if index is None else row[index] for index in positions]
+                    previous = last_name
+                rows += count
+                continue
+            positions = [
+                header.index(column) if column in header else None for column in columns
+            ]
+            reader = csv.reader(io.StringIO(data.decode("utf-8"), newline=""))
+            next(reader)
+            for row in reader:
+                name = row[config_index]
+                if previous is not None and name < previous:
+                    raise ValueError(
+                        f"Run metric reports interleave config names ({name!r} "
+                        f"after {previous!r} in {path}), so they cannot be "
+                        "concatenated in order."
                     )
-                    rows += 1
+                previous = name
+                writer.writerow(
+                    ["" if index is None else row[index] for index in positions]
+                )
+                rows += 1
         out.flush()
         os.fsync(out.fileno())
     return rows
+
+
+def _copy_csv_body(
+    data: bytes, out, config_index: int, header: list[str]
+) -> tuple[str, str, int] | None:
+    """Copy a CSV's rows (not its header) to ``out`` unchanged, if they are plain.
+
+    ``data`` is the whole file. The header (often quoted: some metric names
+    hold commas) must be its first line, which it is when that line parses to
+    ``header``. Rows with no quote character and no carriage return are one
+    record per ``\\n``-terminated line with no field holding a comma, so their
+    records are their lines and their fields the comma-split cells, exactly
+    as the csv module would read them. Returns the first and last rows'
+    ``config_name`` and the row count, or ``None`` when the rows are not
+    plain (the caller then re-writes them row by row).
+    """
+    end = data.find(b"\n")
+    if end < 0:
+        return "", "", 0
+    first_line = data[:end].decode("utf-8")
+    if next(csv.reader([first_line]), None) != header:
+        return None
+    body = data[end + 1 :]
+    if b'"' in body or b"\r" in body:
+        return None
+    if not body:
+        return "", "", 0
+    if not body.endswith(b"\n"):
+        body += b"\n"
+    first = body.split(b"\n", 1)[0]
+    last = body.rstrip(b"\n").rsplit(b"\n", 1)[-1]
+    first_name = first.decode("utf-8").split(",")[config_index]
+    last_name = last.decode("utf-8").split(",")[config_index]
+    out.write(body.decode("utf-8"))
+    return first_name, last_name, body.count(b"\n")

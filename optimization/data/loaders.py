@@ -45,6 +45,7 @@ from loaders.edge_overrides import load_block_edge_overrides
 from loaders.tables import (
     load_program_records,
     load_school_records,
+    load_student_records,
     normalize_student_records,
     read_csv,
     read_csv_source,
@@ -478,14 +479,52 @@ def _filter_to_population(
 # ====================================================================== #
 # Schools
 # ====================================================================== #
+# Normalized source tables by (loader, scenario source fingerprint, role,
+# filter group). A run reads the same school and program tables for its
+# centroids, capacities, coordinates, citywide set and program metrics, and the
+# same assignment students for its attendance-area hint and MNL metrics;
+# normalizing costs ~0.8 s a school table and ~5 s a student table. The
+# fingerprint covers source contents, selectors, capacity scenarios and planned
+# schools, so any change misses.
+ASSIGNMENT_STUDENT_ROLE = "assignment.students"
+
+
+def _scenario_records(
+    loader, data: DataScenario, role: str, filter_group: str = "optimization"
+) -> pd.DataFrame:
+    """``loader(data, role, filter_group=..., low_memory=False)``, read once a process.
+
+    The ``loaders.tables`` readers memoise in process and on disk
+    (``loaders.table_cache``) and return a fresh frame each call, so callers
+    may modify what they receive.
+    """
+    return loader(data, role, filter_group=filter_group, low_memory=False)
+
+
+def load_school_table(data: DataScenario) -> pd.DataFrame:
+    """The scenario's normalized ``optimization.schools`` records (a copy)."""
+    return _scenario_records(load_school_records, data, SCHOOL_ROLE)
+
+
+def load_program_table(data: DataScenario) -> pd.DataFrame:
+    """The scenario's normalized ``optimization.programs`` records (a copy)."""
+    return _scenario_records(load_program_records, data, PROGRAM_ROLE)
+
+
+def load_assignment_students(data: DataScenario) -> pd.DataFrame:
+    """The scenario's normalized ``assignment.students`` records (a copy).
+
+    The same read as the assignment market's (``filter_group="assignment"``,
+    ``low_memory=False``).
+    """
+    return _scenario_records(
+        load_student_records, data, ASSIGNMENT_STUDENT_ROLE, "assignment"
+    )
+
+
 def load_schools(cfg: IngestConfig) -> pd.DataFrame:
     """Return scenario schools with capacities and optimization attributes."""
-    frame = load_school_records(
-        cfg.data,
-        SCHOOL_ROLE,
-        filter_group="optimization",
-        low_memory=False,
-    )
+    frame = load_school_table(cfg.data)
     missing = {"school_id", cfg.unit} - set(frame.columns)
     if missing:
         raise ValueError(f"School table is missing columns: {sorted(missing)}.")
@@ -512,9 +551,7 @@ def citywide_school_ids(data) -> frozenset[int]:
     alternative every student holds while the zoning problem owns no node for
     it, which is the default pairing.
     """
-    frame = load_school_records(
-        data, SCHOOL_ROLE, filter_group="optimization", low_memory=False
-    )
+    frame = load_school_table(data)
     if "category" not in frame.columns or "school_id" not in frame.columns:
         return frozenset()
     citywide = frame.loc[frame["category"] == "Citywide", "school_id"]
@@ -523,12 +560,7 @@ def citywide_school_ids(data) -> frozenset[int]:
 
 def load_school_locations(cfg: IngestConfig) -> pd.DataFrame:
     """Return canonical school IDs and raw locations before capacity filtering."""
-    frame = load_school_records(
-        cfg.data,
-        SCHOOL_ROLE,
-        filter_group="optimization",
-        low_memory=False,
-    )
+    frame = load_school_table(cfg.data)
     missing = {"school_id", cfg.unit} - set(frame.columns)
     if missing:
         raise ValueError(
@@ -543,12 +575,7 @@ def load_school_locations(cfg: IngestConfig) -> pd.DataFrame:
 def load_school_coordinates(data: DataScenario | None = None) -> pd.DataFrame:
     """Return canonical scenario school points for geometry artifacts."""
     scenario = data or _legacy_scenario()
-    frame = load_school_records(
-        scenario,
-        SCHOOL_ROLE,
-        filter_group="optimization",
-        low_memory=False,
-    )
+    frame = load_school_table(scenario)
     required = {"school_id", "lat", "lon"}
     missing = required - set(frame.columns)
     if missing:
@@ -568,12 +595,7 @@ def load_school_coordinates(data: DataScenario | None = None) -> pd.DataFrame:
 
 
 def _attach_capacity(frame: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
-    programs = load_program_records(
-        cfg.data,
-        PROGRAM_ROLE,
-        filter_group="optimization",
-        low_memory=False,
-    )
+    programs = load_program_table(cfg.data)
     missing = {"school_id", "program_type", "capacity"} - set(programs.columns)
     if missing:
         raise ValueError(
@@ -618,21 +640,10 @@ def _attach_capacity(frame: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
 # ====================================================================== #
 def load_area_table(cfg: IngestConfig) -> pd.DataFrame:
     """Build one optimization row per scenario-backed geographic area."""
-    students = load_students(cfg)
-    missing_geography = students[cfg.unit].isna()
-    if missing_geography.any():
-        identities = students.loc[missing_geography, "studentno"].head(10).tolist()
-        raise ValueError(
-            f"Cannot construct a {cfg.unit} graph with "
-            f"{int(missing_geography.sum())} included students that have no "
-            f"district {cfg.unit}; students include {identities}. Set "
-            "outside_district_students to 'ignore' to filter them."
-        )
+    student_stats = load_area_student_stats(cfg)
     schools = load_schools(cfg)
-    student_stats = _aggregate_students(students, cfg)
     school_stats = _aggregate_schools(schools, cfg.unit)
 
-    student_stats[cfg.unit] = student_stats[cfg.unit].astype(int)
     area = student_stats.merge(school_stats, how="outer", on=cfg.unit)
     area = _add_missing_areas(area, cfg)
     if cfg.unit == "Block":
@@ -655,6 +666,27 @@ def load_area_table(cfg: IngestConfig) -> pd.DataFrame:
     )
     area[["Lat", "Lon"]] = area[["Lat", "Lon"]].fillna(0.0)
     return area
+
+
+def load_area_student_stats(cfg: IngestConfig) -> pd.DataFrame:
+    """The student columns of :func:`load_area_table`, one row per area with students.
+
+    Exactly the values ``load_area_table`` carries for these areas; every
+    other area there has zero students of each kind.
+    """
+    students = load_students(cfg)
+    missing_geography = students[cfg.unit].isna()
+    if missing_geography.any():
+        identities = students.loc[missing_geography, "studentno"].head(10).tolist()
+        raise ValueError(
+            f"Cannot construct a {cfg.unit} graph with "
+            f"{int(missing_geography.sum())} included students that have no "
+            f"district {cfg.unit}; students include {identities}. Set "
+            "outside_district_students to 'ignore' to filter them."
+        )
+    stats = _aggregate_students(students, cfg)
+    stats[cfg.unit] = stats[cfg.unit].astype(int)
+    return stats
 
 
 def _aggregate_students(students: pd.DataFrame, cfg: IngestConfig) -> pd.DataFrame:
@@ -961,6 +993,7 @@ def is_max_distance_exempt_block(area_id: int) -> bool:
 
 __all__ = [
     "ADJACENCY_ROLE",
+    "ASSIGNMENT_STUDENT_ROLE",
     "AREA_DISTANCE_CACHE_SCHEMA_VERSION",
     "CAPACITY_ROLE",
     "capacity_source_roles",
@@ -981,6 +1014,8 @@ __all__ = [
     "ENROLLMENT_SHARE_ROLE",
     "load_enrollment_shares",
     "load_area_latlon",
+    "load_area_student_stats",
+    "load_assignment_students",
     "load_area_table",
     "load_census_shapefile",
     "ALL_SCHOOLS_CENTROIDS",
@@ -988,8 +1023,10 @@ __all__ = [
     "load_distance_dict",
     "load_manual_block_edges",
     "load_neighbors",
+    "load_program_table",
     "load_school_coordinates",
     "load_school_locations",
+    "load_school_table",
     "load_schools",
     "load_students",
     "is_max_distance_exempt_block",

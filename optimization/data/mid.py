@@ -5,17 +5,18 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import yaml
 
-from assignment.student_assignment.market_generator.priority_generator import (
-    PriorityGenerator,
-)
-from assignment.student_assignment.market_generator.school_choice_market import (
-    load_market_data,
+from assignment.student_assignment.market_generator.policy_market import (
+    PolicyMarket,
+    ctip_key,
+    load_policy_market,
+    unmodelled_policy_settings,
+    utility_list_length,
+    utility_model_enabled,
 )
 from choice.estimate import area_key as _area_key
 from choice.estimate import area_to_node as _area_to_node
@@ -92,18 +93,95 @@ class MidType:
 
 LISTED, APPENDED, DESIGNATED = 0, 1, 2
 
+#: ``LotteryLists.budget`` of a student whose drawn list has no length cap.
+UNLIMITED_BUDGET = np.iinfo(np.int64).max
+
+
+@dataclass(frozen=True, eq=False)
+class LotteryLists:
+    """Per-lottery lists of a utility-model market (``utility-model.enable``).
+
+    The simulator draws every student's list afresh each iteration, so these
+    lists replace ``MidType.programs`` (empty in such a market): row ``i`` of
+    lottery ``l`` is the alternatives ``segments[l * n + i]`` to
+    ``segments[l * n + i + 1]`` of the flat arrays, for student
+    ``student_ids[i]``. Each row holds, as ``policy_student_market`` builds
+    the submitted lists, the drawn list (``LISTED``, best drawn utility
+    first), the zone GE programs (``APPENDED``) and the designation order
+    (``DESIGNATED``), each with its in-zone ``tier`` and out-of-zone
+    ``open_tier`` (-1: closed).
+
+    Two things depend on the zoning and are left to the lottery DA. The list
+    is cut at ``budget[i]`` *eligible* programs, so it holds every candidate
+    until ``budget`` of them are open in every zoning (citywide or open
+    out of zone). And an appended or designated program the zoning puts on
+    the cut list is a duplicate the simulator drops: ``copy`` is the position,
+    within the row, of the listed copy of that program (-1: none).
+
+    ``program`` indexes ``LotterySpec.program_ids``; ``utility`` is the drawn
+    utility of the program (the simulator's ``assigned_utility``; 0 where the
+    estimate's utility is -inf, as for an unplaced student) and ``draw`` the
+    student's MTB lottery number there, both from the simulator's stream.
+    """
+
+    student_ids: tuple[str, ...]
+    segments: np.ndarray
+    program: np.ndarray
+    tier: np.ndarray
+    open_tier: np.ndarray
+    kind: np.ndarray
+    copy: np.ndarray
+    utility: np.ndarray
+    draw: np.ndarray
+    budget: np.ndarray
+
+    @property
+    def lotteries(self) -> int:
+        return (len(self.segments) - 1) // max(len(self.student_ids), 1)
+
+    def start(self, lottery: int) -> np.ndarray:
+        """Absolute row offsets of one lottery: ``(n + 1,)``."""
+        n = len(self.student_ids)
+        return self.segments[lottery * n : (lottery + 1) * n + 1]
+
+    def row_lengths(self) -> np.ndarray:
+        """``(lotteries, n)`` alternatives per row."""
+        return np.diff(self.segments).reshape(-1, len(self.student_ids))
+
+    @property
+    def nbytes(self) -> int:
+        return sum(
+            getattr(self, name).nbytes
+            for name in (
+                "segments",
+                "program",
+                "tier",
+                "open_tier",
+                "kind",
+                "copy",
+                "utility",
+                "draw",
+                "budget",
+            )
+        )
+
 
 @dataclass(frozen=True)
 class LotterySpec:
     """How a matching-policy market is matched (``optimization.lottery_da``).
 
-    Deferred acceptance on ``lotteries`` multiple-tie-breaking lotteries
-    drawn from ``seed``, as the assignment simulator runs the policy: each
-    student's list is what it builds (``MidType.kinds``), and ``fractions``
-    maps each reserved program to its per-class seat fractions (empty without
-    reserves; ``guardrail_setup``). The draws are indexed by ``student_ids``
-    and ``program_ids``, the market's full sets, so they do not move when
-    preprocessing drops alternatives.
+    Deferred acceptance on ``lotteries`` multiple-tie-breaking lotteries, as
+    the assignment simulator runs the policy: each student's list is what it
+    builds (``MidType.kinds``), and ``fractions`` maps each reserved program
+    to its per-class seat fractions (empty without reserves;
+    ``guardrail_setup``).
+
+    With the submitted lists the draws come from ``seed``, indexed by
+    ``student_ids`` and ``program_ids``, the market's full sets, so they do
+    not move when preprocessing drops alternatives. With the utility model
+    (``lists``) lottery ``l`` *is* the simulator's iteration ``seed + l``
+    under its ``random-seed`` (``random_seed``): its lists, utilities and
+    lottery numbers are drawn from that iteration's stream.
     """
 
     fractions: dict[str, tuple[float, ...]]
@@ -114,6 +192,8 @@ class LotterySpec:
     add_aa_schools: bool
     student_ids: tuple[str, ...]
     program_ids: tuple[str, ...]
+    lists: LotteryLists | None = None
+    random_seed: int | None = None
 
 
 @dataclass(frozen=True)
@@ -239,6 +319,10 @@ class MidMarket:
 
     @property
     def preference_count(self) -> int:
+        lists = None if self.lottery is None else self.lottery.lists
+        if lists is not None:
+            # Alternatives per lottery, on average.
+            return int(round(len(lists.program) / max(lists.lotteries, 1)))
         return sum(len(student_type.programs) for student_type in self.types)
 
     @property
@@ -274,26 +358,23 @@ class MidStudentMarket:
     lottery: LotterySpec | None = None
 
 
-class _StaticZones:
-    def __init__(self) -> None:
-        self._zone_priority_matrix = None
-
-    @property
-    def zone_priority_matrix(self):
-        return self._zone_priority_matrix
-
-
 def build_mid_student_market(
     problem: ZoneProblem, optimization_config
 ) -> MidStudentMarket:
-    """Load the assignment cohort before MID type compression."""
+    """Load the assignment cohort before MID type compression.
+
+    Everything zoning-independent comes from the shared, cached
+    ``PolicyMarket`` of the data scenario and the policy
+    (``assignment.student_assignment.market_generator.policy_market``).
+    """
     handling = optimization_config.mid_utility_handling
     if handling not in MID_UTILITY_HANDLING:
         raise ValueError(f"Unknown MID utility handling {handling!r}.")
 
     policy_name = getattr(optimization_config, "matching_policy", None)
-    assignment_market = _assignment_market(optimization_config)
-    priority_config = assignment_market.config
+    priority_config = policy_config(optimization_config)
+    if policy_name is not None:
+        _require_modelled_policy(priority_config, policy_name)
     policies = priority_config["policies"]
     ctip_options = priority_config["ctip-options"]
     if len(policies) != 1 or len(ctip_options) != 1:
@@ -303,32 +384,46 @@ def build_mid_student_market(
     source = getattr(optimization_config, "mid_preference_source", "estimate")
     if source not in MID_PREFERENCE_SOURCES:
         raise ValueError(f"Unknown MID preference source {source!r}.")
+    if policy_name is not None:
+        # The policy decides whose lists the simulator matches: the submitted
+        # ones ("stated"), or with utility-model.enable true lists drawn each
+        # lottery from the simulator's utility estimate (assignment.estimate),
+        # which mid_preference_source names "estimate".
+        required = "estimate" if utility_model_enabled(priority_config) else "stated"
+        if source != required:
+            lists = (
+                "lists drawn from its utility model (utility-model.enable: true)"
+                if required == "estimate"
+                else "the submitted lists"
+            )
+            raise ValueError(
+                f"matching_policy {policy_name!r} matches {lists}, as the "
+                f"simulator does; set mid_preference_source: {required}."
+            )
+    market = load_policy_market(optimization_config.data_scenario, priority_config)
     if policy_name is None:
-        priorities = PriorityGenerator(assignment_market).get_base_policy_priorities(
-            policies[0],
-            ctip_options[0],
-            zone_priority_matrix=_attendance_area_priority_matrix(assignment_market),
+        # Status quo: zone priority at the student's own area GE program only.
+        priorities = market.policy_priorities(
+            market.attendance_area_zone_priority(), ctip_options[0]
         )
-    elif source != "stated":
-        raise ValueError(
-            "A matching_policy market matches the submitted lists the simulator "
-            "matches; set mid_preference_source: stated."
+        load = _load_utility_table if source == "estimate" else _stated_utility_table
+        utility = load(
+            optimization_config.data_scenario,
+            market.student_index,
+            market.program_table["program_id"],
+            market,
         )
-    load = _load_utility_table if source == "estimate" else _stated_utility_table
-    utility = load(
-        optimization_config.data_scenario,
-        assignment_market.students.student_data.index,
-        assignment_market.programs.program_df["program_id"],
-        assignment_market,
-    )
-    program_rows = assignment_market.programs.program_df.copy()
-    available_programs = sorted(set(program_rows["program_id"]) & set(utility.columns))
+        utility_programs = set(utility.columns)
+    else:
+        # A policy market scores the submitted lists itself; the stated table
+        # it would otherwise read has a column for every program.
+        utility_programs = set(market.program_ids)
+    program_rows = market.program_table.copy()
+    available_programs = sorted(set(program_rows["program_id"]) & utility_programs)
     program_rows = program_rows.set_index("program_id")
     if not program_rows.index.is_unique:
         raise ValueError("Assignment program identities are not unique.")
-    citywide_schools = {
-        int(value) for value in assignment_market.schools.citywide_schools
-    }
+    citywide_schools = set(market.citywide_schools)
     school_to_node = _school_to_node(problem)
     area_to_node = _area_to_node(problem)
 
@@ -395,19 +490,21 @@ def build_mid_student_market(
     available_programs = retained_programs
     if policy_name is not None:
         return policy_student_market(
-            problem, optimization_config, assignment_market, tuple(programs)
+            problem, optimization_config, market, tuple(programs)
         )
 
     area_column = _student_area_column(problem)
-    students_frame = assignment_market.students.student_data
-    if area_column not in students_frame:
+    attributes = market.student_attributes
+    if area_column not in attributes:
         raise ValueError(f"Assignment students lack {area_column!r}.")
-    program_indices = assignment_market.programs.indices
-    frl_values = assignment_market.students.frl
+    program_indices = market.program_index
+    columns = [program_indices[p] - 1 for p in available_programs]
     students = []
     utility_students = 0
-    for student_id, row in students_frame.iterrows():
-        area = _area_key(row[area_column])
+    for row_index, (student_id, area_value, frl) in enumerate(
+        zip(market.student_index, attributes[area_column], attributes["frl"])
+    ):
+        area = _area_key(area_value)
         node = area_to_node.get(area)
         if node is None:
             raise ValueError(
@@ -415,14 +512,12 @@ def build_mid_student_market(
                 f"from graph {problem.level.name}."
             )
         student_key = _identity_text(student_id)
-        frl = float(frl_values.loc[student_id])
+        frl = float(frl)
         if student_key not in utility.index:
             student = MidStudent(node, (), (), (), (), frl)
         else:
             utility_students += 1
             values = utility.loc[student_key, available_programs].to_numpy(dtype=float)
-            row_index = assignment_market.students.studentno2idx[student_id]
-            columns = [program_indices[p] - 1 for p in available_programs]
             tiers = np.asarray(priorities[row_index, columns], dtype=float)
             student = replace(
                 make_mid_student(node, available_programs, values, tiers, handling),
@@ -445,14 +540,22 @@ def build_mid_market(problem: ZoneProblem, optimization_config) -> MidMarket:
         programs=student_market.programs,
         types=compress_mid_students(student_market.students),
         student_count=len(student_market.students),
-        outside_only_student_count=sum(
-            not student.programs for student in student_market.students
+        outside_only_student_count=_outside_only_count(
+            student_market.lottery,
+            sum(not student.programs for student in student_market.students),
         ),
         utility_student_count=student_market.utility_student_count,
         utility_handling=student_market.utility_handling,
         policy=student_market.policy,
         lottery=student_market.lottery,
     )
+
+
+def _outside_only_count(lottery: LotterySpec | None, from_types: int) -> int:
+    """Students with no alternative; with per-lottery lists, in no lottery."""
+    if lottery is None or lottery.lists is None:
+        return from_types
+    return int((lottery.lists.row_lengths().sum(axis=0) == 0).sum())
 
 
 def make_mid_student(
@@ -600,6 +703,8 @@ def _type_order(student_type) -> tuple:
 def preprocess_mid_market(market: MidMarket, problem: ZoneProblem) -> MidMarket:
     """Remove alternatives that cannot receive positive assignment mass."""
 
+    if market.lottery is not None and market.lottery.lists is not None:
+        return _preprocess_lottery_lists(market, problem)
     programs = {
         program.program_id: program
         for program in market.programs
@@ -720,6 +825,102 @@ def preprocess_mid_market(market: MidMarket, problem: ZoneProblem) -> MidMarket:
     )
 
 
+def _preprocess_lottery_lists(market: MidMarket, problem: ZoneProblem) -> MidMarket:
+    """``preprocess_mid_market`` for per-lottery lists (``LotteryLists``).
+
+    The same alternatives go as for one fixed list -- a zoned program the
+    student can reach in no zoning, and with ``add_aa_schools`` a designation
+    that would be in their own zone -- with one difference: a listed program
+    without seats stays when the list is capped, since it still takes one of
+    the capped places wherever the zoning makes it eligible.
+    """
+    spec = market.lottery
+    lists = spec.lists
+    by_id = market.program_by_id
+    programs = [by_id.get(program_id) for program_id in spec.program_ids]
+    present = np.array([p is not None for p in programs], dtype=bool)
+    capacity = np.array([0 if p is None else p.capacity for p in programs])
+    citywide = np.array([p is not None and p.citywide for p in programs])
+    school_node = np.array(
+        [
+            -1 if p is None or p.school_node is None else int(p.school_node)
+            for p in programs
+        ],
+        dtype=np.int64,
+    )
+    n = len(lists.student_ids)
+    node_of = {t.student_id: int(t.node) for t in market.types}
+    row_node = np.array([node_of[sid] for sid in lists.student_ids], dtype=np.int64)
+    segments = lists.segments
+    entry_row = np.repeat(np.arange(len(segments) - 1), np.diff(segments))
+    student = entry_row % max(n, 1)
+    node = row_node[student]
+    program = lists.program.astype(np.int64)
+    kind = lists.kind
+
+    zoned = ~citywide[program]
+    opened = (kind != APPENDED) & (lists.open_tier >= 0)
+    own_zone_counts = ~((kind == DESIGNATED) & spec.add_aa_schools)
+    check = zoned & ~opened & own_zone_counts
+    reachable = np.ones(len(program), dtype=bool)
+    if check.any():
+        # Whether the student's node and the school's share a candidate zone,
+        # once per distinct pair, from each node's candidate zones.
+        a, b = node[check], school_node[program[check]]
+        nodes = np.unique(np.concatenate([a, b]))
+        zones = [problem.candidate_zones(int(v)) for v in nodes]
+        zone_ids = sorted(set().union(*zones))
+        column = {zone: k for k, zone in enumerate(zone_ids)}
+        member = np.zeros((len(nodes), len(zone_ids)), dtype=bool)
+        for k, candidates in enumerate(zones):
+            member[k, [column[zone] for zone in candidates]] = True
+        ia, ib = np.searchsorted(nodes, a), np.searchsorted(nodes, b)
+        key, inverse = np.unique(ia * len(nodes) + ib, return_inverse=True)
+        possible = (member[key // len(nodes)] & member[key % len(nodes)]).any(axis=1)
+        reachable[check] = possible[inverse.ravel()]
+    capped = lists.budget[student] != UNLIMITED_BUDGET
+    seated = (capacity[program] > 0) | ((kind == LISTED) & capped)
+    keep = present[program] & seated & (~zoned | opened | (own_zone_counts & reachable))
+
+    counts = np.bincount(entry_row[keep], minlength=len(segments) - 1)
+    new_segments = np.zeros(len(segments), dtype=np.int64)
+    np.cumsum(counts, out=new_segments[1:])
+    new_index = np.cumsum(keep) - 1
+    copy = lists.copy.astype(np.int64)
+    has_copy = copy >= 0
+    target = np.where(has_copy, segments[entry_row] + copy, 0)
+    remapped = np.where(
+        has_copy & keep[target],
+        new_index[target] - new_segments[entry_row],
+        -1,
+    )
+    filtered = replace(
+        lists,
+        segments=new_segments,
+        program=lists.program[keep],
+        tier=lists.tier[keep],
+        open_tier=lists.open_tier[keep],
+        kind=lists.kind[keep],
+        copy=remapped[keep].astype(lists.copy.dtype),
+        utility=lists.utility[keep],
+        draw=lists.draw[keep],
+    )
+    referenced = {spec.program_ids[j] for j in np.unique(filtered.program)}
+    return MidMarket(
+        programs=tuple(p for p in market.programs if p.program_id in referenced),
+        types=market.types,
+        student_count=market.student_count,
+        outside_only_student_count=_outside_only_count(
+            replace(spec, lists=filtered), 0
+        ),
+        utility_student_count=market.utility_student_count,
+        utility_handling=market.utility_handling,
+        utility_scale=market.utility_scale,
+        policy=market.policy,
+        lottery=replace(spec, lists=filtered),
+    )
+
+
 POLICY_CONFIG_DIR = Path(__file__).resolve().parents[2] / (
     "assignment/configs/policy_configs"
 )
@@ -735,12 +936,21 @@ def policy_config_path(name: str) -> Path:
     return path
 
 
-def _assignment_market(optimization_config):
+def policy_config(optimization_config) -> dict:
+    """The assignment config a MID market is built for: the base config and
+    the ``matching_policy`` (status quo when unset)."""
     root = Path(__file__).resolve().parents[2]
     with (root / "assignment/configs/base_config.yaml").open(
         encoding="utf-8"
     ) as stream:
         config = yaml.safe_load(stream)
+    # base_config leaves utility-model.enable unset (null), which a MID market
+    # reads as the submitted lists. A policy config that sets a utility-model
+    # block with enable: true draws each lottery's lists from the utility
+    # model instead (mid_preference_source: estimate); the shared-market
+    # whitelist (policy_market.unmodelled_policy_settings) rejects the values
+    # it does not model, as it does every other setting. The simulator reads
+    # its utility model from the matching config, so the two must agree.
     policy = getattr(optimization_config, "matching_policy", None)
     policy_path = (
         POLICY_CONFIG_DIR / "status_quo.yaml"
@@ -749,142 +959,18 @@ def _assignment_market(optimization_config):
     )
     with policy_path.open(encoding="utf-8") as stream:
         config.update(yaml.safe_load(stream))
-    data = optimization_config.data_scenario
-    programs, schools, students = load_market_data(data)
-    return SimpleNamespace(
-        config=config,
-        data_scenario=data,
-        grade=data.filter("assignment", "grade"),
-        programs=programs,
-        schools=schools,
-        students=students,
-        n=students.n,
-        num_programs=programs.num_programs,
-        zones=_StaticZones(),
-    )
+    return config
 
 
-def policy_priorities(market) -> tuple[np.ndarray, np.ndarray]:
-    """In-zone and out-of-zone priority tiers of the market's matching policy.
-
-    The assignment simulator adds the policy's ``zone`` weight at every
-    program in the student's zone (under ``restrict-zone``, every citywide
-    program too) and masks every program outside it unless the policy opens
-    it (``Zones.zone_eligibility_matrix``). So the two tiers are the policy's
-    priorities with every program in zone, and with none; the second is kept
-    only where an exception opens the program -- every program without
-    ``restrict-zone``, the student's CTIP status under ``CTIP_access``, a
-    sibling's school under ``sibling-access``, a TK promote's feeder under
-    ``tk-access`` -- and is -1 elsewhere.
-    """
-    config = market.config
-    generator = PriorityGenerator(market)
-    shape = (market.n, market.num_programs)
-    policy, ctip = config["policies"][0], config["ctip-options"][0]
-    in_zone = generator.get_base_policy_priorities(
-        policy, ctip, zone_priority_matrix=np.ones(shape, dtype=int)
-    )
-    out_of_zone = generator.get_base_policy_priorities(
-        policy, ctip, zone_priority_matrix=np.zeros(shape, dtype=int)
-    )
-    restrict = config.get("restrict-zone", False)
-    students = market.students
-    if not restrict:
-        access = np.ones(shape, dtype=bool)
-    else:
-        access = np.zeros(shape, dtype=bool)
-        if restrict == "CTIP_access":
-            ctip_students = students.student_data["ctip1"].fillna(0).to_numpy() > 0
-            access |= ctip_students[:, None]
-        if config.get("sibling-access", False):
-            access |= np.asarray(students.sibling(market.programs)) > 0
-        if config.get("tk-access", False):
-            access |= np.asarray(students.promotion(market.programs.indices)) > 0
-    return in_zone, np.where(access, out_of_zone, -1)
-
-
-def policy_reserves(market, programs, optimization_config):
-    """The policy's reserve fractions, class count and each student's class.
-
-    Returns ``(fractions, num_classes, strict, classes)`` with ``classes`` by
-    assignment row. Mirrors ``GuardrailSetup``: classes split
-    ``reserve-settings.column`` at its thresholds (missing values take the
-    mean); every GE program -- or every citywide-school GE program under
-    ``citywide_only`` -- reserves ``reserve_fraction``; and citywide-school GE
-    programs take ``citywide-reserve-ratios`` unless
-    ``citywide-separate-reserves`` is off. Zone-share reserves (no
-    ``reserve_fraction``) depend on the zoning and are not modelled. Without
-    reserves (``guard-rails: -1``) everyone is class 0 of 1.
-    """
-    config = market.config
-    if int(config.get("guard-rails", -1)) == -1:
-        return {}, 1, False, np.zeros(market.n, dtype=int)
-    settings = config.get("reserve-settings") or {}
-    data = market.students.student_data
-    column = settings["column"]
-    if isinstance(column, dict):
-        index = sum(weight * data[name] for name, weight in column.items())
-    else:
-        index = data[column]
-    values = pd.to_numeric(index, errors="coerce").to_numpy(dtype=float)
-    values = np.nan_to_num(values, nan=np.nanmean(values))
-    if "num_categories" in settings:
-        count = int(settings["num_categories"])
-        thresholds = np.percentile(values, 100 * np.arange(1, count) / count)
-    elif "thresholds" in settings:
-        thresholds = settings["thresholds"]
-        if isinstance(thresholds, str) and thresholds.startswith("percentile:"):
-            thresholds = np.atleast_1d(
-                np.percentile(values, float(thresholds.split(":")[1]))
-            )
-        thresholds = np.asarray(thresholds, dtype=float)
-    else:
-        raise ValueError("reserve-settings needs num_categories or thresholds.")
-    classes = np.searchsorted(thresholds, values)
-    if not settings["lower_disadvantaged"]:
-        classes = len(thresholds) - classes
-    num_classes = len(thresholds) + 1
-
-    fraction = settings.get("reserve_fraction", -1)
-    if fraction == -1:
+def _require_modelled_policy(config, name) -> None:
+    """Reject a policy setting the lottery market does not model, naming each
+    (``policy_market.unmodelled_policy_settings``, consumer ``mid``)."""
+    unmodelled = unmodelled_policy_settings(config, "mid")
+    if unmodelled:
         raise ValueError(
-            f"matching_policy {optimization_config.matching_policy!r}: reserves "
-            "sized by each zone's class shares change with the zoning and are "
-            "not modelled; give reserve-settings.reserve_fraction."
+            f"matching_policy {name!r} sets what the lottery market does not "
+            "model: " + "; ".join(unmodelled) + "."
         )
-    fraction = tuple(float(value) for value in fraction)
-    ratios = tuple(
-        float(value) for value in config.get("citywide-reserve-ratios", [0.57, 0.43])
-    )
-    if len(fraction) != num_classes or len(ratios) != num_classes:
-        raise ValueError("Reserve fractions must give one share per class.")
-    citywide_schools = {int(value) for value in market.schools.citywide_schools}
-    separate = config.get("citywide-separate-reserves", True)
-    citywide_only = settings.get("citywide_only", False)
-    fractions = {}
-    for program in programs:
-        if not _is_ge(program.program_id):
-            continue
-        citywide_ge = program.school_id in citywide_schools
-        if separate and citywide_ge:
-            fractions[program.program_id] = ratios
-        elif citywide_ge or not citywide_only:
-            fractions[program.program_id] = fraction
-    return fractions, num_classes, int(config["guard-rails"]) == 1, classes
-
-
-#: Policy settings the lottery market does not reproduce; a policy setting
-#: one is rejected rather than matched differently from the simulator.
-_UNMODELLED_POLICY_SETTINGS = (
-    "drop_below_aa",
-    "remove_non_aa_or_citywide",
-    "aa_ge_only",
-    "overscribe_aa",
-    "truncate-at-AA-GE",
-    "aa_boost",
-    "distance-priority",
-    "distance-boost",
-)
 
 
 def _is_ge(program_id: str) -> bool:
@@ -892,64 +978,48 @@ def _is_ge(program_id: str) -> bool:
     return len(parts) >= 2 and parts[1] == "GE"
 
 
-def program_type_eligibility(market) -> np.ndarray:
-    """``PreferenceGenerator._get_program_type_eligibility_matrix``: which
-    program types (language pools, special programs) each student qualifies
-    for, as a students x programs boolean matrix."""
-    qualified = market.students.get_qualified_programs_dict()
-    by_type = market.programs.program_type_to_indices
-    known = set(market.programs.program_df["program_type"].unique())
-    eligible = np.zeros((market.n, market.num_programs), dtype=bool)
-    for row, studentno in market.students.idx2studentno.items():
-        for program_type in qualified[studentno]:
-            if program_type in known:
-                eligible[row, [index - 1 for index in by_type[program_type]]] = True
-    return eligible
-
-
-def policy_student_market(problem, optimization_config, market, programs):
+def policy_student_market(
+    problem, optimization_config, market: PolicyMarket, programs
+) -> MidStudentMarket:
     """The students of a matching-policy market, each with the simulator's list.
 
     ``PreferenceGenerator.initialize_real_preferences`` builds each list as the
     student's submitted programs, then (``add_aa_schools``) the GE program of
-    each school their zone owns, then (``designate``) the designation order:
-    the language programs nearest first if they asked for language
-    designation and ranked that type, then every GE program nearest first.
-    Every entry must be one the student qualifies for (program type) and may
-    enter (zone eligibility). The zone parts depend on the zoning, so each
-    list here holds every candidate, tagged by kind, and the lottery DA keeps
-    those the zoning allows (``optimization.lottery_da``).
+    each school their zone owns, then (``designate``) the designation order
+    (``PolicyMarket.designation``). Every entry must be one the student
+    qualifies for (program type) and may enter (zone eligibility). The zone
+    parts depend on the zoning, so each list here holds every candidate,
+    tagged by kind, and the lottery DA keeps those the zoning allows
+    (``optimization.lottery_da``), as ``PolicyMarket.apply`` does for the
+    simulator.
 
     Priorities follow ``PriorityGenerator.get_priorities_without_lottery``:
     the round priority, plus -- for listed and appended programs only -- the
     policy's tiers and the ``non_designation_boost``. A designation carries
     the round priority alone. ``priorities`` are the in-zone tiers and
     ``open_priorities`` those out of zone where the policy opens the program
-    (-1: closed).
+    (``PolicyMarket.access``; -1: closed).
     """
-    config = market.config
-    unmodelled = [name for name in _UNMODELLED_POLICY_SETTINGS if config.get(name)]
-    # The market always matches the submitted lists, as the policy's matching
-    # config does (utility-model off), whatever assignment/configs/base_config
-    # says; language designation then follows requestprogramdesignation only.
-    if config.get("designation-ordering-type", "in_zone") != "in_zone":
-        unmodelled.append("designation-ordering-type")
-    if unmodelled:
-        raise ValueError(
-            f"matching_policy {optimization_config.matching_policy!r} sets "
-            f"{unmodelled}, which the lottery market does not reproduce."
-        )
-    students = market.students
-    index_of = market.programs.indices
-    id_of = {index: program_id for program_id, index in index_of.items()}
+    config = policy_config(optimization_config)
+    index_of = market.program_index
+    id_of = market.program_ids
     retained = {program.program_id for program in programs}
-    in_zone, open_tiers = policy_priorities(market)
-    rounds = PriorityGenerator(market)._round_priorities()[:, 0]
-    boost = float(config.get("non_designation_boost", 100))
-    qualifies = program_type_eligibility(market)
-    fractions, num_classes, strict, classes = policy_reserves(
-        market, programs, optimization_config
-    )
+    in_zone, out_of_zone = market.tiers[ctip_key(config["ctip-options"][0])]
+    open_tiers = np.where(market.access > 0, out_of_zone, -1)
+    rounds = market.round_boost.astype(float)
+    boost = float(market.non_designation_boost)
+    qualifies = market.qualifies
+    if market.reserve_fractions is None:
+        raise ValueError(
+            f"matching_policy {optimization_config.matching_policy!r}: reserves "
+            "sized by each zone's class shares change with the zoning and are "
+            "not modelled; give reserve-settings.reserve_fraction."
+        )
+    fractions = {
+        program.program_id: market.reserve_fractions[program.program_id]
+        for program in programs
+        if program.program_id in market.reserve_fractions
+    }
     add_aa = bool(config.get("add_aa_schools", False))
     designate = bool(config.get("designate", False))
 
@@ -958,49 +1028,50 @@ def policy_student_market(problem, optimization_config, market, programs):
         for program in sorted(programs, key=lambda p: index_of[p.program_id])
         if not program.citywide and _is_ge(program.program_id)
     ]
-    if designate:
-        # The simulator argsorts the language and the GE distance columns as
-        # two separate arrays with numpy's default sort; programs at one
-        # school tie, so the same call on the same arrays keeps its order.
-        distances = students.distance_data
-        lp_columns = [c for c in distances.columns if c.split("-")[1] != "GE"]
-        ge_columns = [c for c in distances.columns if c.split("-")[1] == "GE"]
-        lp_values = distances.loc[students.student_data.index, lp_columns].to_numpy()
-        ge_values = distances.loc[students.student_data.index, ge_columns].to_numpy()
-        language_designation = students.language_designation
-        program_types = students.student_data["program_types"]
+    if utility_model_enabled(config):
+        return _utility_student_market(
+            problem,
+            optimization_config,
+            market,
+            programs,
+            config,
+            fractions=fractions,
+            open_tiers=open_tiers,
+            in_zone=in_zone,
+            zoned_ge=zoned_ge,
+            add_aa=add_aa,
+        )
 
     area_to_node = _area_to_node(problem)
     area_column = _student_area_column(problem)
-    frame = students.student_data
-    if area_column not in frame:
+    attributes = market.student_attributes
+    if area_column not in attributes:
         raise ValueError(f"Assignment students lack {area_column!r}.")
-    ranked_lists = students.selected_preferences(market.programs.index_list)
-    frl_values = students.frl
     result = []
     with_lists = 0
-    for row, (studentno, ranked) in enumerate(
-        zip(frame.index, ranked_lists, strict=True)
+    for row, (studentno, area_value, frl, ranked) in enumerate(
+        zip(
+            market.student_index,
+            attributes[area_column],
+            attributes["frl"],
+            market.selected,
+            strict=True,
+        )
     ):
-        node = area_to_node.get(_area_key(frame.at[studentno, area_column]))
+        node = area_to_node.get(_area_key(area_value))
         if node is None:
             raise ValueError(
                 f"Assignment student {studentno} geography is absent from graph "
                 f"{problem.level.name}."
             )
-        if students.studentno2idx[studentno] != row:
-            raise ValueError("Assignment student rows are out of order.")
         listed = list(
-            dict.fromkeys(id_of[int(index)] for index in ranked if int(index) > 0)
+            dict.fromkeys(id_of[int(index) - 1] for index in ranked if int(index) > 0)
         )
         excluded = set(listed)
         entries = []  # (program, tier, open tier, kind, utility)
 
-        def column(program_id):
-            return index_of[program_id] - 1
-
         for rank, program_id in enumerate(listed):
-            j = column(program_id)
+            j = index_of[program_id] - 1
             if program_id not in retained or not qualifies[row, j]:
                 continue
             tier = rounds[row] + in_zone[row, j] + boost
@@ -1014,7 +1085,7 @@ def policy_student_market(problem, optimization_config, market, programs):
             )
         if add_aa:
             for program_id in zoned_ge:
-                j = column(program_id)
+                j = index_of[program_id] - 1
                 if program_id in excluded or not qualifies[row, j]:
                     continue
                 entries.append(
@@ -1027,24 +1098,11 @@ def policy_student_market(problem, optimization_config, market, programs):
                     )
                 )
         if designate:
-            types_value = program_types.loc[studentno]
-            wanted_types = (
-                set()
-                if types_value is None or isinstance(types_value, float)
-                else set(types_value)
-            )
-            candidates = []
-            if language_designation.loc[studentno]:
-                candidates += [
-                    lp_columns[k]
-                    for k in np.argsort(lp_values[row])
-                    if lp_columns[k].split("-")[1] in wanted_types
-                ]
-            candidates += [ge_columns[k] for k in np.argsort(ge_values[row])]
-            for program_id in candidates:
+            for index in market.designation_order(row):
+                j = int(index) - 1
+                program_id = id_of[j]
                 if program_id in excluded or program_id not in retained:
                     continue
-                j = column(program_id)
                 if not qualifies[row, j]:
                     continue
                 open_tier = rounds[row] if open_tiers[row, j] >= 0 else -1
@@ -1060,19 +1118,19 @@ def policy_student_market(problem, optimization_config, market, programs):
                 scaled_utilities=tuple(
                     max(1, round(CP_SAT_SCALE * entry[4])) for entry in entries
                 ),
-                frl=float(frl_values.loc[studentno]),
+                frl=float(frl),
                 open_priorities=tuple(
                     _integer(entry[2], "open priority") for entry in entries
                 ),
                 student_id=_identity_text(studentno),
-                reserve_class=int(classes[row]),
+                reserve_class=int(market.reserve_classes[row]),
                 kinds=tuple(entry[3] for entry in entries),
             )
         )
     lottery = LotterySpec(
         fractions=fractions,
-        num_classes=num_classes,
-        strict=strict,
+        num_classes=market.num_classes,
+        strict=market.strict_reserves,
         seed=int(optimization_config.mid_lottery_seed),
         lotteries=int(optimization_config.mid_lotteries),
         add_aa_schools=add_aa,
@@ -1089,19 +1147,230 @@ def policy_student_market(problem, optimization_config, market, programs):
     )
 
 
-def _attendance_area_priority_matrix(market) -> np.ndarray:
-    """Build the status-quo singleton attendance-area GE priority component."""
-    matrix = np.zeros((market.n, market.num_programs), dtype=int)
-    grade = market.grade
-    for student_id, row in market.students.student_data.iterrows():
-        school_id = row.get("idschoolattendance")
-        if pd.isna(school_id):
-            continue
-        program_id = f"{int(school_id)}-GE-{grade}"
-        program_index = market.programs.indices.get(program_id)
-        if program_index is not None:
-            matrix[market.students.studentno2idx[student_id], program_index - 1] = 1
-    return matrix
+def _student_nodes(problem, market: PolicyMarket) -> np.ndarray:
+    area_to_node = _area_to_node(problem)
+    area_column = _student_area_column(problem)
+    attributes = market.student_attributes
+    if area_column not in attributes:
+        raise ValueError(f"Assignment students lack {area_column!r}.")
+    nodes = []
+    for studentno, area_value in zip(market.student_index, attributes[area_column]):
+        node = area_to_node.get(_area_key(area_value))
+        if node is None:
+            raise ValueError(
+                f"Assignment student {studentno} geography is absent from graph "
+                f"{problem.level.name}."
+            )
+        nodes.append(int(node))
+    return np.asarray(nodes, dtype=np.int64)
+
+
+def _integral(values: np.ndarray, label: str) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    rounded = np.rint(values)
+    if not np.all(np.isfinite(values)) or np.any(rounded != values):
+        raise ValueError(f"MID {label} must be integers.")
+    return rounded.astype(np.int64)
+
+
+def _utility_student_market(
+    problem,
+    optimization_config,
+    market: PolicyMarket,
+    programs,
+    config,
+    *,
+    fractions,
+    open_tiers,
+    in_zone,
+    zoned_ge,
+    add_aa,
+) -> MidStudentMarket:
+    """``policy_student_market`` for a policy drawing its lists from the
+    utility model: one :class:`LotteryLists` row per student and lottery.
+
+    Lottery ``l`` replays the simulator's iteration ``mid_lottery_seed + l``
+    under the policy's ``random-seed`` (``PolicyMarket.utility_draws``): the
+    same utilities, outside options and MTB lottery numbers. Each row is what
+    ``get_utility_model_preferences_after_truncation`` builds for it -- the
+    eligible programs by drawn utility (``LISTED``), the zone's GE programs
+    (``APPENDED``) and the designation order (``DESIGNATED``) -- with the
+    zoning-dependent eligibility, cut and duplicates left to the lottery DA
+    (see :class:`LotteryLists`). Priorities are those of the submitted lists.
+    """
+    settings = config["utility-model"]
+    length = utility_list_length(settings.get("list-length"))
+    scale = float(settings.get("gumbel-scale", 1.0))
+    random_seed = int(config.get("random-seed", 0))
+    first = int(optimization_config.mid_lottery_seed)
+    lotteries = int(optimization_config.mid_lotteries)
+    if first < 0:
+        raise ValueError(
+            "A utility-model market's mid_lottery_seed is the first simulator "
+            "iteration it replays, so it cannot be negative."
+        )
+    index_of = market.program_index
+    n, width = market.n, market.num_programs
+    spec_programs = tuple(sorted(program.program_id for program in programs))
+    spec_index = np.full(width, -1, dtype=np.int64)
+    for j, program_id in enumerate(spec_programs):
+        spec_index[index_of[program_id] - 1] = j
+    retained = spec_index >= 0
+    citywide = np.zeros(width, dtype=bool)
+    for program in programs:
+        citywide[index_of[program.program_id] - 1] = program.citywide
+
+    rounds = _integral(market.round_boost, "round priorities")
+    boost = _integral(market.non_designation_boost, "non-designation boost")
+    listed_tier = _integral(in_zone, "priority tiers") + rounds[:, None] + boost
+    open_listed = np.where(
+        open_tiers >= 0,
+        _integral(np.where(open_tiers >= 0, open_tiers, 0), "priority tiers")
+        + rounds[:, None]
+        + boost,
+        -1,
+    )
+    open_designated = np.where(open_tiers >= 0, rounds[:, None], -1)
+    candidate = market.qualifies & retained[None, :]
+    # Open to the student in every zoning: once the list holds ``length`` of
+    # these, nothing below it can be reached.
+    always = candidate & (citywide[None, :] | (open_tiers >= 0))
+
+    # The static parts: the zone's GE programs, and the designation order.
+    if add_aa:
+        ge_columns = np.array([index_of[p] - 1 for p in zoned_ge], dtype=np.int64)
+        app_rows, app_k = np.nonzero(market.qualifies[:, ge_columns])
+        app_cols = ge_columns[app_k]
+    else:
+        app_rows = app_cols = np.zeros(0, dtype=np.int64)
+    if config.get("designate", False):
+        des_rows = np.repeat(np.arange(n), np.diff(market.designation_start))
+        des_cols = market.designation.astype(np.int64) - 1
+        wanted = retained[des_cols] & market.qualifies[des_rows, des_cols]
+        des_rows, des_cols = des_rows[wanted], des_cols[wanted]
+    else:
+        des_rows = des_cols = np.zeros(0, dtype=np.int64)
+
+    budget = np.full(n, UNLIMITED_BUDGET if length is None else length, dtype=np.int64)
+    parts = {
+        name: []
+        for name in ("program", "tier", "open_tier", "kind", "copy", "utility", "draw")
+    }
+    segments = [np.zeros(1, dtype=np.int64)]
+    offset = 0
+    listed_position = np.full((n, width), -1, dtype=np.int64)
+    any_listed = np.zeros(n, dtype=bool)
+    for lottery in range(lotteries):
+        draw = market.utility_draws(
+            first + lottery,
+            random_seed,
+            gumbel_scale=scale,
+            outside_option=length is None,
+        )
+        utilities = draw.utilities
+        order = np.argsort(-utilities, axis=1)
+        ranked = candidate
+        if length is None:
+            ranked = candidate & (utilities > draw.outside[:, None])
+        listed = np.take_along_axis(ranked, order, axis=1)
+        if length is not None:
+            open_always = np.take_along_axis(always, order, axis=1) & listed
+            before = np.cumsum(open_always, axis=1) - open_always
+            listed &= before < length
+        list_rows, list_k = np.nonzero(listed)
+        list_cols = order[list_rows, list_k]
+        any_listed |= np.bincount(list_rows, minlength=n) > 0
+
+        rows = np.concatenate([list_rows, app_rows, des_rows])
+        cols = np.concatenate([list_cols, app_cols, des_cols])
+        kinds = np.concatenate(
+            [
+                np.full(len(list_rows), LISTED, dtype=np.int8),
+                np.full(len(app_rows), APPENDED, dtype=np.int8),
+                np.full(len(des_rows), DESIGNATED, dtype=np.int8),
+            ]
+        )
+        # Row-major, each row listed then appended then designated, each
+        # part in its own order (all three are already row-major).
+        arrange = np.argsort(rows * 3 + kinds, kind="stable")
+        rows, cols, kinds = rows[arrange], cols[arrange], kinds[arrange]
+        counts = np.bincount(rows, minlength=n)
+        row_start = np.zeros(n + 1, dtype=np.int64)
+        np.cumsum(counts, out=row_start[1:])
+        within = np.arange(len(rows)) - row_start[rows]
+        is_listed = kinds == LISTED
+        listed_position[rows[is_listed], cols[is_listed]] = within[is_listed]
+        copy = np.where(is_listed, -1, listed_position[rows, cols])
+        listed_position[rows[is_listed], cols[is_listed]] = -1
+
+        designated = kinds == DESIGNATED
+        parts["program"].append(spec_index[cols].astype(np.int32))
+        parts["tier"].append(
+            np.where(designated, rounds[rows], listed_tier[rows, cols])
+        )
+        parts["open_tier"].append(
+            np.where(
+                designated,
+                open_designated[rows, cols],
+                np.where(kinds == APPENDED, -1, open_listed[rows, cols]),
+            )
+        )
+        parts["kind"].append(kinds)
+        parts["copy"].append(copy.astype(np.int32))
+        # Welfare counts drawn utility; an estimate's -inf (a program it rules
+        # out, which designation can still fill) counts as the outside
+        # option's 0, like an unplaced student.
+        drawn = utilities[rows, cols]
+        parts["utility"].append(np.where(np.isfinite(drawn), drawn, 0.0))
+        parts["draw"].append(draw.lottery[rows, cols])
+        segments.append(offset + row_start[1:])
+        offset += len(rows)
+        del draw, utilities, order, ranked, listed
+
+    student_ids = tuple(_identity_text(s) for s in market.student_index)
+    lists = LotteryLists(
+        student_ids=student_ids,
+        segments=np.concatenate(segments),
+        budget=budget,
+        **{name: np.concatenate(values) for name, values in parts.items()},
+    )
+    nodes = _student_nodes(problem, market)
+    frl = market.student_attributes["frl"].to_numpy(dtype=float)
+    students = tuple(
+        MidStudent(
+            node=int(nodes[row]),
+            programs=(),
+            priorities=(),
+            utilities=(),
+            scaled_utilities=(),
+            frl=float(frl[row]),
+            open_priorities=(),
+            student_id=student_ids[row],
+            reserve_class=int(market.reserve_classes[row]),
+            kinds=(),
+        )
+        for row in range(n)
+    )
+    lottery_spec = LotterySpec(
+        fractions=fractions,
+        num_classes=market.num_classes,
+        strict=market.strict_reserves,
+        seed=first,
+        lotteries=lotteries,
+        add_aa_schools=add_aa,
+        student_ids=tuple(sorted(student_ids)),
+        program_ids=spec_programs,
+        lists=lists,
+        random_seed=random_seed,
+    )
+    return MidStudentMarket(
+        programs=programs,
+        students=students,
+        utility_student_count=int(any_listed.sum()),
+        utility_handling="omit_nonpositive",
+        policy=optimization_config.matching_policy,
+        lottery=lottery_spec,
+    )
 
 
 def _stated_utility_table(data, student_ids, program_ids, market) -> pd.DataFrame:
@@ -1112,14 +1381,12 @@ def _stated_utility_table(data, student_ids, program_ids, market) -> pd.DataFram
     """
     del data
     program_ids = [str(value) for value in program_ids]
-    by_index = {
-        int(index): str(code) for code, index in market.programs.indices.items()
-    }
-    prefs = market.students.selected_preferences(market.programs.index_list)
     column = {program_id: position for position, program_id in enumerate(program_ids)}
     rows, labels = [], []
-    for student_id, ranked in zip(student_ids, prefs, strict=True):
-        listed = [by_index[int(index)] for index in ranked if int(index) > 0]
+    for student_id, ranked in zip(student_ids, market.selected, strict=True):
+        listed = [
+            market.program_ids[int(index) - 1] for index in ranked if int(index) > 0
+        ]
         if not listed:
             continue
         row = np.full(len(program_ids), -np.inf)

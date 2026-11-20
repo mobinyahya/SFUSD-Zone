@@ -299,14 +299,23 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
     assert metrics["Prop Distance > 3 and non-designated (All Assigned)"] == 3 / 5
     pd.testing.assert_frame_equal(assignments, original_assignments)
 
-    prepare_calls = []
-    prepare_aggregates = evaluator._prepare_full_report_aggregates
+    from assignment.student_assignment.evaluation import match_evaluator
 
-    def track_prepare(student_data, **kwargs):
-        prepare_calls.append((len(student_data), kwargs))
-        return prepare_aggregates(student_data, **kwargs)
+    report_calls = []
+    program_calls = []
+    full_report_metrics = match_evaluator.full_report_metrics
+    program_report_inputs = evaluator._program_report_inputs
 
-    monkeypatch.setattr(evaluator, "_prepare_full_report_aggregates", track_prepare)
+    def track_report(evaluator, columns, rows):
+        report_calls.append(len(rows))
+        return full_report_metrics(evaluator, columns, rows)
+
+    def track_program_inputs(student_data):
+        program_calls.append(len(student_data))
+        return program_report_inputs(student_data)
+
+    monkeypatch.setattr(match_evaluator, "full_report_metrics", track_report)
+    monkeypatch.setattr(evaluator, "_program_report_inputs", track_program_inputs)
     reports = evaluator.eval_aggregate_metric_reports("config-a")
     assert set(reports) == {"program", "zip_code", "attendance_area", "citywide"}
     expected_contexts = (
@@ -314,22 +323,17 @@ def test_full_report_covers_metric_families_without_mutating_inputs(
         + pd.to_numeric(students["zipcode"]).nunique()
         + students["idschoolattendance"].nunique()
     )
-    assert len(prepare_calls) == expected_contexts
-    assert (
-        sum(
-            call_kwargs.get("include_program_report_stats", False)
-            for _, call_kwargs in prepare_calls
-        )
-        == 1
-    )
+    assert len(report_calls) == expected_contexts
+    assert len(program_calls) == 1
 
-    prepare_calls.clear()
+    report_calls.clear()
+    program_calls.clear()
     citywide_only = evaluator.eval_aggregate_metric_reports(
         "config-a", include_local_metrics=False
     )
     assert set(citywide_only) == {"citywide"}
-    assert len(prepare_calls) == 1
-    assert not prepare_calls[0][1].get("include_program_report_stats", False)
+    assert len(report_calls) == 1
+    assert not program_calls
 
     program_metrics = reports["program"]
     assert program_metrics["config_name"].eq("config-a").all()

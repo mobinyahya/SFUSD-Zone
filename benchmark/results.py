@@ -32,10 +32,28 @@ def discover_run_dirs(root_folder: str) -> list[str]:
         return [root]
 
     run_dirs: list[str] = []
-    for dirpath, _, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root):
         if MANIFEST_FILENAME in filenames:
             run_dirs.append(dirpath)
+            # A run's own folders (stages/, matching/) hold no runs; skipping
+            # them saves a directory listing per lottery file on NFS.
+            dirnames[:] = []
     return sorted(run_dirs)
+
+
+#: Threads that read run folders during aggregation. Reads are I/O-bound
+#: (NFS round trips), so threads overlap them without extra CPU.
+AGGREGATION_READ_THREADS = 32
+
+
+def _read_parallel(function, items: list) -> list:
+    """``[function(item) for item in items]``, in order, on I/O threads."""
+    if len(items) < 2:
+        return [function(item) for item in items]
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=AGGREGATION_READ_THREADS) as executor:
+        return list(executor.map(function, items))
 
 
 def load_run_result(folder_path: str) -> dict[str, Any]:
@@ -50,25 +68,37 @@ def aggregate_results(
     summary_csv: str | None = None,
     stages_csv: str | None = None,
     matching_dir: str | None = None,
+    run_dirs: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Aggregate outputs under a shared sidecar lock using atomic CSV writes.
 
     With ``matching_dir`` (a sweep's ``matching.assignment_dir``), also
     rebuild the sweep's matching reports there from the runs' own
-    (:func:`benchmark.assignment.aggregate_matching_metrics`).
+    (:func:`benchmark.assignment.aggregate_matching_metrics`). ``run_dirs``
+    (a Slurm plan's task folders) replaces the walk of ``root_folder``; a
+    folder without a manifest is left out, as the walk would leave it.
     """
 
     root = str(Path(root_folder).expanduser().resolve())
+    if run_dirs is None:
+        run_dirs = discover_run_dirs(root)
+    else:
+        run_dirs = sorted(
+            str(Path(run_dir).expanduser().resolve())
+            for run_dir in run_dirs
+            if os.path.isfile(os.path.join(run_dir, MANIFEST_FILENAME))
+        )
     with _aggregation_lock(root):
         frames = _aggregate_results_unlocked(
             root,
             summary_csv=summary_csv,
             stages_csv=stages_csv,
+            run_dirs=run_dirs,
         )
         if matching_dir:
             from benchmark.assignment import aggregate_matching_metrics
 
-            aggregate_matching_metrics(root, matching_dir)
+            aggregate_matching_metrics(root, matching_dir, run_dirs=run_dirs)
         return frames
 
 
@@ -77,19 +107,28 @@ def _aggregate_results_unlocked(
     *,
     summary_csv: str | None,
     stages_csv: str | None,
+    run_dirs: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     run_rows: list[dict[str, Any]] = []
     stage_rows: list[dict[str, Any]] = []
 
-    for run_dir in discover_run_dirs(root):
+    def read(run_dir: str):
         try:
             manifest = load_manifest(run_dir)
         except (OSError, json.JSONDecodeError):
-            continue
-
+            return None
         result = _load_result_if_present(run_dir)
-        run_rows.append(_run_row(root, run_dir, manifest, result))
-        stage_rows.extend(_stage_rows(root, run_dir, manifest, result))
+        return (
+            _run_row(root, run_dir, manifest, result),
+            _stage_rows(root, run_dir, manifest, result),
+        )
+
+    folders = discover_run_dirs(root) if run_dirs is None else run_dirs
+    for rows in _read_parallel(read, folders):
+        if rows is None:
+            continue
+        run_rows.append(rows[0])
+        stage_rows.extend(rows[1])
 
     run_df = pd.DataFrame(run_rows)
     stage_df = pd.DataFrame(stage_rows)

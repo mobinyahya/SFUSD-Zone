@@ -110,6 +110,39 @@ def test_skip_existing_requires_every_expected_iteration(tmp_path):
     assert "SKIP (already done): status_quo_real_2223" in complete.stdout
 
 
+def test_skip_existing_reads_lotteries_from_the_long_format_sidecar(tmp_path):
+    import json
+
+    settings, paths = _write_settings(tmp_path, test_specs=["2223:22:is"], iter_end=3)
+    output = paths["runs"] / "status_quo_real_2223" / "status_quo_real" / "policy"
+    output.mkdir(parents=True)
+    sidecar = output / "policy_lotteries.json"
+    (output / "policy_lotteries.csv.gz").write_bytes(b"")
+
+    sidecar.write_text(json.dumps({"lotteries": [0, 2]}, indent=2))
+    partial = _run(settings, "--no-generate", "--no-analyze", "--skip-existing")
+    assert "SKIP (already done)" not in partial.stdout
+
+    # Lottery 1 as an old run's per-lottery file completes the set.
+    (output / "policy_iteration1.csv").write_text("studentno\n")
+    complete = _run(settings, "--no-generate", "--no-analyze", "--skip-existing")
+    assert complete.returncode == 0, complete.stderr or complete.stdout
+    assert "SKIP (already done): status_quo_real_2223" in complete.stdout
+
+    # A sidecar without its data file does not count.
+    (output / "policy_iteration1.csv").unlink()
+    sidecar.write_text(json.dumps({"lotteries": [0, 1, 2]}))
+    assert (
+        "SKIP (already done)"
+        in _run(settings, "--no-generate", "--no-analyze", "--skip-existing").stdout
+    )
+    (output / "policy_lotteries.csv.gz").unlink()
+    assert (
+        "SKIP (already done)"
+        not in _run(settings, "--no-generate", "--no-analyze", "--skip-existing").stdout
+    )
+
+
 def test_simulation_failures_keep_labels_after_skips_and_respect_bound(tmp_path):
     variants = ["bad:1", "good1:1", "good2:1"]
     settings, paths = _write_settings(

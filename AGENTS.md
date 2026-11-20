@@ -227,13 +227,27 @@ matching/                # Slurm sweeps with matching: this run's raw assignment
 ```
 
 On Slurm (`benchmark.slurm`), a matching-enabled sweep is matched inside its
-optimization allocations: each task runs optimize, evaluate, and match, each
-in a fresh process on the task's CPU, into its own `matching/` folder; the
-locked end-of-allocation aggregation rebuilds the sweep's
+optimization allocations. Each task runs optimize and evaluate in one process,
+with evaluate reusing the in-memory dataset and stages, then match in a fresh
+process on the task's CPU, into its own `matching/` folder. The locked
+end-of-allocation aggregation rebuilds the sweep's
 `<assignment_dir>/aggregate_metrics/metrics_*.csv` by streaming the runs'
-reports. A plan is at most 12 jobs (`--mem-per-cpu=8G`), with no downstream
-assignment graph; with `skip_existing`, a run optimized but unmatched is
-planned for its matching alone. The local `benchmark.run` path still matches
+reports. A plan is at most 12 jobs (40 CPUs, `--mem-per-cpu=4G`), with no
+downstream assignment graph. With `skip_existing`, a run optimized but
+unmatched is planned for its matching alone. The allocations claim tasks from
+one shared queue (plan schema 7) via `O_EXCL` claim files in
+`<output_dir>/.slurm/claims/`. A task is claimed only when a slot is free to
+start it. Tasks are claimed longest first, with tasks sharing a policy market
+kept together. A claim whose process has not started within 10 min is
+released for other allocations (a node-local start token stops the late
+process from running it too). Stale claims are recovered by heartbeat and by
+`squeue`, which each recovery check re-reads at most once a minute. An idle
+allocation waits up to 30 min before exiting while any claim is unstarted or
+belongs to a job squeue no longer lists. Each allocation peeks at its first
+tasks, without claiming them, and warms their datasets once
+(`benchmark/warmup.py`). Phase processes fork from a `forkserver` that
+preloads the environment once per allocation. Each phase records its timings
+and peak RSS in the run's `phase_timings.json`. See `benchmark/README.md`. The local `benchmark.run` path still matches
 the whole sweep at once into `<assignment_dir>/`.
 
 `optimization/run_archive.py` owns the archive: area ids are stored once per

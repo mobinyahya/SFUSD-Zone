@@ -8,6 +8,7 @@ import json
 import math
 import os
 import pickle
+from collections import OrderedDict
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -29,6 +30,17 @@ CLOSER_NEIGHBOR_CACHE_SCHEMA_VERSION = 5
 CLOSER_NEIGHBORS_GRAPH_KEY = "closer_neighbors"
 SCHOOL_GEOMETRY_DISTANCES_GRAPH_KEY = "school_geometry_distances_miles"
 METERS_PER_MILE = 1609.344
+
+# Validated relations by (cache file, variant fingerprint), shared by every
+# store in the process: a Dataset per run (metrics regeneration, the Block_0
+# graph spatial metrics build) otherwise re-reads and re-validates ~1 s each.
+# The fingerprint binds graph membership, adjacency and source contents; the
+# file's stat signature, taken when it was read or written, catches a file
+# changed since.
+_PROCESS_MEMO: "OrderedDict[tuple[Path, str], tuple[tuple, CloserNeighborData]]" = (
+    OrderedDict()
+)
+_PROCESS_MEMO_SIZE = 4
 
 GeometryLoader = Callable[[str], gpd.GeoDataFrame]
 SchoolLoader = Callable[[], pd.DataFrame]
@@ -90,6 +102,11 @@ class CloserNeighborArtifactStore:
         memory_key = (path, fingerprint)
         if memory_key in self._memory_cache:
             return self._memory_cache[memory_key]
+        memo = _PROCESS_MEMO.get(memory_key)
+        if memo is not None and memo[0] == _stat_signature(path):
+            _PROCESS_MEMO.move_to_end(memory_key)
+            self._memory_cache[memory_key] = memo[1]
+            return memo[1]
 
         payload = self._read_payload(path, level)
         variant = payload["variants"].get(fingerprint)
@@ -116,6 +133,12 @@ class CloserNeighborArtifactStore:
             )
 
         self._memory_cache[memory_key] = data
+        signature = _stat_signature(path)
+        if signature is not None:
+            _PROCESS_MEMO[memory_key] = (signature, data)
+            _PROCESS_MEMO.move_to_end(memory_key)
+        while len(_PROCESS_MEMO) > _PROCESS_MEMO_SIZE:
+            _PROCESS_MEMO.popitem(last=False)
         return data
 
     def level_variants(self, level) -> dict:
@@ -331,22 +354,59 @@ class CloserNeighborArtifactStore:
 
         nodes = {int(node) for node in G.nodes()}
         schools = set(school_ids)
-        if set(closer) != nodes or set(distances) != nodes:
+        if not isinstance(closer, dict) or not isinstance(distances, dict):
+            return None
+        if closer.keys() != nodes or distances.keys() != nodes:
             return None
         for node in nodes:
-            if set(closer[node]) != schools or set(distances[node]) != schools:
+            by_school = closer[node]
+            node_distances = distances[node]
+            if by_school.keys() != schools or node_distances.keys() != schools:
                 return None
             graph_neighbors = {int(neighbor) for neighbor in G.neighbors(node)}
-            for school_id in school_ids:
-                support = closer[node][school_id]
-                distance = distances[node][school_id]
-                if not isinstance(support, (set, frozenset)):
-                    return None
-                if not set(support) <= graph_neighbors:
-                    return None
-                if not math.isfinite(float(distance)) or float(distance) < 0:
-                    return None
+            if not _supports_valid(by_school.values(), graph_neighbors):
+                return None
+            if not _distances_valid(node_distances.values()):
+                return None
         return CloserNeighborData(school_ids, closer, distances)
+
+
+def _stat_signature(path: Path) -> tuple | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_ino, stat.st_size, stat.st_mtime_ns)
+
+
+_SET_TYPES = frozenset({set, frozenset})
+
+
+def _supports_valid(supports, graph_neighbors: set[int]) -> bool:
+    """Every support is a set of the node's graph neighbors."""
+    if set(map(type, supports)) <= _SET_TYPES:
+        # One C-level union instead of a subset test per school.
+        return graph_neighbors.issuperset(frozenset().union(*supports))
+    return all(
+        isinstance(support, (set, frozenset)) and set(support) <= graph_neighbors
+        for support in supports
+    )
+
+
+def _distances_valid(values) -> bool:
+    """Every distance is finite and non-negative."""
+    values = list(values)
+    if set(map(type, values)) <= {float}:
+        # A NaN or infinite term makes the exact sum non-finite.
+        try:
+            total = math.fsum(values)
+        except (OverflowError, ValueError):  # huge terms, or inf + -inf
+            total = None
+        if total is not None:
+            return math.isfinite(total) and (not values or min(values) >= 0)
+    return all(
+        math.isfinite(float(distance)) and float(distance) >= 0 for distance in values
+    )
 
 
 def graph_geometry_fingerprint(G: nx.Graph) -> str:

@@ -135,6 +135,8 @@ def test_reserve_da_matches_the_assignment_guardrail_da():
             np.zeros(1, dtype=np.int64),
             np.zeros(len(flat), dtype=np.int64),
             False,
+            np.full(len(flat), -1, dtype=np.int64),
+            np.full(students, np.iinfo(np.int64).max, dtype=np.int64),
         )
         matched = [prefs[s][r] if r >= 0 else 0 for s, r in enumerate(ranks)]
         assert matched == expected.tolist(), trial

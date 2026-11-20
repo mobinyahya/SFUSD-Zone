@@ -10,7 +10,7 @@ import networkx as nx
 from Config.Constants import AREA_ETHNICITIES
 from loaders.edge_overrides import apply_block_edge_overrides
 from optimization.data import edge_weights, loaders, node_areas
-from optimization.data.geography import great_circle_miles
+from optimization.data.geography import great_circle_distance_dict
 from optimization.data.loaders import IngestConfig
 from optimization.levels import LEVEL_NODE_TARGETS
 
@@ -210,18 +210,12 @@ def aggregate(parent_G: nx.Graph, partition: dict[int, int]) -> nx.Graph:
                 )
 
     # distances between aggregated centroids
-    distance_dict: dict[int, dict[int, float]] = {}
-    for i in new_G.nodes():
-        distance_dict[i] = {}
-        lat_i, lon_i = new_G.nodes[i]["lat"], new_G.nodes[i]["lon"]
-        for j in new_G.nodes():
-            if i == j:
-                distance_dict[i][j] = 0.0
-            else:
-                distance_dict[i][j] = great_circle_miles(
-                    lat_i, lon_i, new_G.nodes[j]["lat"], new_G.nodes[j]["lon"]
-                )
-    new_G.graph["distance_dict"] = distance_dict
+    nodes = list(new_G.nodes())
+    new_G.graph["distance_dict"] = great_circle_distance_dict(
+        nodes,
+        [new_G.nodes[i]["lat"] for i in nodes],
+        [new_G.nodes[i]["lon"] for i in nodes],
+    )
     new_G.graph["F"] = parent_G.graph["F"]
     new_G.graph["R"] = parent_G.graph["R"]
     new_G.graph["school_data"] = parent_G.graph["school_data"]
