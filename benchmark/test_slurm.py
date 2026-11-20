@@ -31,6 +31,7 @@ from benchmark.runner import (
     run_optimization_phase,
 )
 from benchmark.slurm import (
+    _sbatch_options,
     CLAIMED,
     DONE,
     HELD,
@@ -2138,3 +2139,16 @@ def test_forkserver_pool_matches_spawn_and_forks_from_a_quiet_server(monkeypatch
     # A fresh process per call, each forked from one single-threaded server.
     assert len({r[2] for r in results["forkserver"]}) == 3
     assert {r[1] for r in results["forkserver"]} == {1}
+
+
+def test_allocations_exclude_the_broken_nodes_unless_overridden(tmp_path, monkeypatch):
+    plan = _plan(tmp_path)
+    monkeypatch.delenv("SFUSD_SLURM_EXCLUDE", raising=False)
+    assert "--exclude=soal-4,soal-10" in _sbatch_options(plan, tmp_path / "p.json", 0)
+
+    monkeypatch.setenv("SFUSD_SLURM_EXCLUDE", "soal-7")
+    assert "--exclude=soal-7" in _sbatch_options(plan, tmp_path / "p.json", 0)
+
+    monkeypatch.setenv("SFUSD_SLURM_EXCLUDE", "")
+    options = _sbatch_options(plan, tmp_path / "p.json", 0)
+    assert not any(option.startswith("--exclude") for option in options)

@@ -153,6 +153,22 @@ DEFAULT_PLAN_FILENAME = "benchmark-plan.json"
 DEFAULT_SCRIPT_FILENAME = "submit-benchmark.sh"
 SBATCH_ACCOUNT = "soal"
 SBATCH_PARTITION = "soal"
+#: Nodes allocations are not placed on (``--exclude``). soal-4 and soal-10
+#: have read /sailhome about 90x slower than the other nodes since a node
+#: incident on 2026-11-19 (``import numpy``: 30 s against 0.4 s), so a job
+#: there spends many minutes just importing. Remove them once the admins have
+#: fixed the nodes. ``SFUSD_SLURM_EXCLUDE`` replaces the list when a plan's
+#: scripts are written or submitted (empty: exclude nothing).
+SBATCH_EXCLUDE_NODES = ("soal-4", "soal-10")
+EXCLUDE_ENV = "SFUSD_SLURM_EXCLUDE"
+
+
+def sbatch_exclude_nodes() -> tuple[str, ...]:
+    """The nodes to exclude: :data:`EXCLUDE_ENV` if set, else the default."""
+    value = os.environ.get(EXCLUDE_ENV)
+    if value is None:
+        return SBATCH_EXCLUDE_NODES
+    return tuple(node.strip() for node in value.split(",") if node.strip())
 THREAD_ENVIRONMENT = (
     "OMP_NUM_THREADS=1",
     "OPENBLAS_NUM_THREADS=1",
@@ -2042,6 +2058,11 @@ def _sbatch_options(
         # Tags the job with its plan, so ``topup`` can count a plan's live
         # allocations among the user's other jobs.
         f"--comment={_PLAN_COMMENT_PREFIX}{plan.plan_id}",
+        *(
+            [f"--exclude={','.join(excluded)}"]
+            if (excluded := sbatch_exclude_nodes())
+            else []
+        ),
         "--ntasks=1",
         f"--cpus-per-task={allocation.cpus}",
         f"--mem-per-cpu={SBATCH_MEM_PER_CPU}",
