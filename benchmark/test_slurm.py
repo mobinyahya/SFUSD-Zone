@@ -50,6 +50,7 @@ from benchmark.slurm import (
     claims_dir,
     create_plan,
     init_worker_process,
+    live_slurm_jobs as _real_live_slurm_jobs,
     load_plan,
     run_benchmark_worker,
     submission_script,
@@ -548,7 +549,11 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
     ]
     # One pool: 8 CPUs / 4 per task, a fresh process for every unit, each
     # process filtering loader warnings.
-    assert _ImmediateExecutor.created == [
+    created = _ImmediateExecutor.created
+    assert len(created) == 1
+    context = created[0].pop("mp_context")
+    assert context.get_start_method() == "forkserver"
+    assert created == [
         {"max_workers": 2, "max_tasks_per_child": 1, "initializer": init_worker_process}
     ]
     assert all(kwargs["visualization"] == plan.visualization for kwargs in fused_kwargs)
@@ -1410,9 +1415,9 @@ def test_execution_units_fuse_optimize_and_evaluate():
 def test_plan_schema_is_versioned_and_keeps_claim_order(tmp_path, monkeypatch):
     plan = _plan(tmp_path)
     payload = plan.to_dict()
-    assert payload["schema_version"] == PLAN_SCHEMA_VERSION == 6
-    with pytest.raises(ValueError, match="Unsupported Slurm plan schema 5"):
-        SlurmPlan.from_dict({**payload, "schema_version": 5})
+    assert payload["schema_version"] == PLAN_SCHEMA_VERSION == 7
+    with pytest.raises(ValueError, match="Unsupported Slurm plan schema 6"):
+        SlurmPlan.from_dict({**payload, "schema_version": 6})
 
     def task(name, seconds):
         return BenchmarkTask(
@@ -1490,6 +1495,8 @@ def test_first_wave_waits_for_its_dataset_warm_up(tmp_path, monkeypatch):
     events = []
 
     def fake_warm(spec):
+        # The warm-up peeks at the tasks it warms for; it claims none.
+        assert not list(claims_dir(plan).glob("task-*"))
         events.append(("warm", tuple(spec.levels), tuple(spec.policies)))
         return {"key": spec.key, "seconds": 0.0, "levels": {}, "markets": {}}
 
@@ -1652,3 +1659,392 @@ def test_phase_timing_prints_one_line(tmp_path, capsys):
     assert "status=CRASHED" in lines[1]
     phases = json.loads((tmp_path / "run" / PHASE_TIMINGS_FILENAME).read_text())
     assert set(phases["phases"]) == {"match", "evaluate"}
+
+
+# ---------------------------------------------------------------------------
+# Lazy claiming, the not-started guard, squeue refresh, and the forkserver.
+
+
+def _thread_executor(slots):
+    from concurrent.futures import ThreadPoolExecutor
+
+    return ThreadPoolExecutor(max_workers=slots)
+
+
+def _fast_loop(monkeypatch):
+    monkeypatch.setattr("benchmark.slurm.POLL_SECONDS", 0.02)
+    monkeypatch.setattr("benchmark.slurm.IDLE_POLL_SECONDS", 0.02)
+
+
+def _one_allocation(monkeypatch, plan, cpus):
+    monkeypatch.setattr("benchmark.slurm.load_plan", lambda path: plan)
+    monkeypatch.setattr("benchmark.slurm.aggregate_results", lambda *a, **k: None)
+    allocation = SlurmAllocation("benchmark", tuple(range(len(plan.tasks))), cpus, 1)
+    monkeypatch.setattr("benchmark.slurm._allocation_at", lambda plan, i: allocation)
+
+
+def test_lazy_claiming_never_holds_more_claims_than_running_slots(
+    tmp_path, monkeypatch
+):
+    import threading
+
+    plan = _queue_plan(tmp_path, count=9)
+    _fast_loop(monkeypatch)
+    _one_allocation(monkeypatch, plan, 2)
+    store = _store(plan, "1001")
+    observed, lock = [], threading.Lock()
+    original = store.try_claim
+
+    def counting_claim(task_id):
+        state = original(task_id)
+        observed.append(len(store.held))
+        return state
+
+    store.try_claim = counting_claim
+
+    def fused(task, **kwargs):
+        with lock:
+            observed.append(len(store.held))
+        time.sleep(0.02)
+        return TaskResult(task.task_id, task.output_dir, "FEASIBLE")
+
+    monkeypatch.setattr("benchmark.slurm.run_optimize_and_evaluate", fused)
+    assert (
+        run_benchmark_worker(
+            "plan.json", 0, claims=store, make_executor=_thread_executor
+        )
+        == 0
+    )
+    assert observed and max(observed) <= 2  # Two slots, never a whole wave.
+    assert len(list(claims_dir(plan).glob("task-*"))) == 9
+    for index in range(9):
+        claim = json.loads((claims_dir(plan) / f"task-{index}.0").read_text())
+        assert claim["status"] == "done" and claim["started"] is True
+
+
+def _worker_process(plan_path, job_id, out_path):
+    """One allocation in its own process, its tasks faked, on threads."""
+    import benchmark.slurm as slurm
+
+    os.environ["BENCHMARK_SLURM_WARM"] = "0"
+    plan = slurm.load_plan(plan_path)
+    slurm.POLL_SECONDS = 0.01
+    slurm.aggregate_results = lambda *a, **k: None
+    allocation = slurm.SlurmAllocation(
+        "benchmark", tuple(range(len(plan.tasks))), 3, 1
+    )
+    slurm._allocation_at = lambda plan, index: allocation
+    store = _store(plan, job_id, live_jobs=frozenset({"1001", "1002"}))
+    ran, most = [], [0]
+
+    def fused(task, **kwargs):
+        most[0] = max(most[0], len(store.held))
+        ran.append(task.task_id)
+        time.sleep(0.002)
+        return TaskResult(task.task_id, task.output_dir, "FEASIBLE")
+
+    slurm.run_optimize_and_evaluate = fused
+    code = slurm.run_benchmark_worker(
+        plan_path, 0, claims=store, make_executor=_thread_executor
+    )
+    Path(out_path).write_text(
+        json.dumps({"code": code, "ran": ran, "most_held": most[0]}),
+        encoding="utf-8",
+    )
+
+
+def test_two_racing_worker_processes_cover_the_plan_without_overlap(tmp_path):
+    import multiprocessing
+
+    plan = _queue_plan(tmp_path, count=90)
+    plan_path = write_plan(plan)
+    context = multiprocessing.get_context("spawn")
+    outputs = [tmp_path / "a.json", tmp_path / "b.json"]
+    processes = [
+        context.Process(target=_worker_process, args=(str(plan_path), job, str(out)))
+        for job, out in zip(("1001", "1002"), outputs)
+    ]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(180)
+        assert process.exitcode == 0
+    first, second = (json.loads(path.read_text()) for path in outputs)
+    assert first["code"] == second["code"] == 0
+    assert not set(first["ran"]) & set(second["ran"])
+    assert sorted(first["ran"] + second["ran"]) == sorted(
+        task.task_id for task in plan.tasks
+    )
+    assert first["most_held"] <= 3 and second["most_held"] <= 3
+
+
+class _StalledExecutor:
+    """A node whose new processes do not start until ``recovered`` is set."""
+
+    def __init__(self, slots, recovered):
+        from concurrent.futures import ThreadPoolExecutor
+
+        self.pool = ThreadPoolExecutor(max_workers=slots)
+        self.recovered = recovered
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.pool.shutdown(wait=True)
+
+    def submit(self, function, *args):
+        def stalled():
+            self.recovered.wait(30)
+            return function(*args)
+
+        return self.pool.submit(stalled)
+
+
+def test_unstarted_tasks_are_released_and_run_once_elsewhere(tmp_path, monkeypatch):
+    import threading
+
+    plan = _queue_plan(tmp_path, count=4)
+    _fast_loop(monkeypatch)
+    _one_allocation(monkeypatch, plan, 2)
+    ran, lock = [], threading.Lock()
+
+    def fused(task, **kwargs):
+        with lock:
+            ran.append(task.task_id)
+        return TaskResult(task.task_id, task.output_dir, "FEASIBLE")
+
+    monkeypatch.setattr("benchmark.slurm.run_optimize_and_evaluate", fused)
+    recovered = threading.Event()
+    stuck = _store(plan, "1001")
+    codes = {}
+
+    def run_stuck():
+        codes["stuck"] = run_benchmark_worker(
+            "plan.json",
+            0,
+            claims=stuck,
+            make_executor=lambda slots: _StalledExecutor(slots, recovered),
+            start_timeout=0.2,
+        )
+
+    worker = threading.Thread(target=run_stuck)
+    worker.start()
+    try:
+        deadline = time.time() + 20
+        released = []
+        while time.time() < deadline and len(released) < 2:
+            released = [
+                path
+                for path in claims_dir(plan).glob("task-*.0")
+                if json.loads(path.read_text()).get("status") == "released"
+            ]
+            time.sleep(0.02)
+        assert len(released) == 2
+        # Its two stalled slots stay occupied: it holds nothing and claims
+        # nothing new while its processes cannot start.
+        time.sleep(0.3)
+        assert stuck.held == {}
+        assert len(list(claims_dir(plan).glob("task-*"))) == 2
+        record = json.loads(released[0].read_text())
+        assert record["started"] is False and "did not start" in record["reason"]
+
+        # A healthy allocation takes the released tasks and the rest.
+        healthy = _store(plan, "1002")
+        assert (
+            run_benchmark_worker(
+                "plan.json", 0, claims=healthy, make_executor=_ImmediateExecutor
+            )
+            == 0
+        )
+        assert sorted(ran) == [f"task-{i}" for i in range(4)]
+    finally:
+        recovered.set()  # The node recovers: its late processes see the release.
+        worker.join(30)
+    assert codes == {"stuck": 0}
+    # Every task ran exactly once: the stalled node's late processes did not.
+    assert sorted(ran) == [f"task-{i}" for i in range(4)]
+    for path in released:
+        successor = path.with_suffix(".1")
+        assert json.loads(successor.read_text())["status"] == "done"
+
+
+def test_unit_entry_runs_only_if_it_takes_the_start_token(tmp_path):
+    from benchmark.slurm import ABANDONED, _take_token, _unit_entry
+
+    calls = []
+    token = tmp_path / "1.start"
+    assert _take_token(token, {"abandoned": True})
+    assert (
+        _unit_entry(str(token), None, None, "match", 0.0, calls.append, 1)
+        == ABANDONED
+    )
+    assert calls == []
+    other = tmp_path / "2.start"
+    assert _unit_entry(str(other), None, None, "match", 0.0, calls.append, 2) is None
+    assert calls == [2]
+    assert not _take_token(other, {"abandoned": True})  # Too late to abandon.
+
+
+def _squeue(monkeypatch, jobs):
+    """Fake squeue: ``jobs`` (a list the test may change) are live."""
+    calls = []
+
+    def fake(run=None):
+        calls.append(time.time())
+        return frozenset(jobs)
+
+    monkeypatch.setattr("benchmark.slurm.live_slurm_jobs", fake)
+    return calls
+
+
+def test_a_job_cancelled_mid_run_frees_its_claims_at_the_next_recheck(
+    tmp_path, monkeypatch
+):
+    plan = _queue_plan(tmp_path, count=2)
+    jobs = ["1001", "2002"]
+    calls = _squeue(monkeypatch, jobs)
+    cancelled = _store(plan, "1001", live_jobs=frozenset(jobs))
+    assert cancelled.try_claim("task-0") == CLAIMED
+    assert cancelled.try_claim("task-1") == CLAIMED
+    clock = [0.0]
+    survivor = _store(plan, "2002", live_jobs=frozenset(jobs), clock=lambda: clock[0])
+    queue = TaskQueue(plan, range(2), survivor, clock=lambda: clock[0])
+    assert queue.claim_next() is None  # Both held by a live job.
+    assert calls == []  # The start-of-allocation read is under a minute old.
+
+    jobs.remove("1001")  # scancel: its heartbeats stop.
+    past = time.time() - 5
+    for index in range(2):
+        os.utime(claims_dir(plan) / f"task-{index}.0", (past, past))
+    clock[0] = 61.0
+    assert queue.claim_next(force_recovery=True) == 0
+    assert queue.claim_next(force_recovery=True) == 1
+    # One squeue read served both rechecks: at most one a minute.
+    assert len(calls) == 1
+    assert queue.claim_next(force_recovery=True) is None
+    assert len(calls) == 1
+
+
+def test_squeue_reads_only_live_job_states():
+    output = (
+        "101 101 RUNNING\n102 102 COMPLETING\n103 99_3 PENDING\n104 104 CANCELLED\n"
+    )
+
+    def run(*args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, stdout=output)
+
+    jobs = _real_live_slurm_jobs(run)
+    assert {"101", "103", "99_3", "99"} <= jobs
+    assert "102" not in jobs and "104" not in jobs
+
+
+def test_idle_allocation_waits_for_a_dead_jobs_claims_before_exiting(
+    tmp_path, monkeypatch
+):
+    plan = _queue_plan(tmp_path, count=2)
+    _fast_loop(monkeypatch)
+    _one_allocation(monkeypatch, plan, 1)
+    ran = []
+    monkeypatch.setattr(
+        "benchmark.slurm.run_optimize_and_evaluate",
+        lambda task, **kwargs: (
+            ran.append(task.task_id)
+            or TaskResult(task.task_id, task.output_dir, "FEASIBLE")
+        ),
+    )
+    jobs = ["2002", "3003"]
+    _squeue(monkeypatch, jobs)
+    assert _store(plan, "1001").try_claim("task-0") == CLAIMED
+    assert _store(plan, "3003").try_claim("task-1") == CLAIMED
+    # task-1: a live job that started it; not worth waiting for.
+    mark = claims_dir(plan) / "task-1.0"
+    mark.write_text(json.dumps({**json.loads(mark.read_text()), "started": True}))
+    # task-0: job 1001 is gone from squeue, but its last heartbeat came after
+    # the read, so it is not stale yet; it is at a later read.
+    soon = time.time() + 0.5
+    os.utime(claims_dir(plan) / "task-0.0", (soon, soon))
+    survivor = _store(plan, "2002", live_jobs=frozenset(jobs), refresh_seconds=0.0)
+    started = time.time()
+    code = run_benchmark_worker(
+        "plan.json", 0, claims=survivor, make_executor=_ImmediateExecutor
+    )
+    assert code == 0
+    assert ran == ["task-0"]  # Waited, then recovered it; task-1 untouched.
+    assert time.time() - started < 10
+    assert json.loads(mark.read_text())["job_id"] == "3003"
+
+
+def test_idle_wait_is_capped(tmp_path, monkeypatch):
+    plan = _queue_plan(tmp_path, count=1)
+    _fast_loop(monkeypatch)
+    monkeypatch.setattr("benchmark.slurm.EXIT_WAIT_LIMIT_SECONDS", 0.3)
+    _one_allocation(monkeypatch, plan, 1)
+    _squeue(monkeypatch, ["2002"])
+    assert _store(plan, "1001").try_claim("task-0") == CLAIMED
+    future = time.time() + 3600  # A heartbeat that never ages: never stale.
+    os.utime(claims_dir(plan) / "task-0.0", (future, future))
+    survivor = _store(
+        plan, "2002", live_jobs=frozenset({"2002"}), refresh_seconds=0.0
+    )
+    started = time.time()
+    code = run_benchmark_worker(
+        "plan.json", 0, claims=survivor, make_executor=_ImmediateExecutor
+    )
+    assert code == 0
+    assert 0.3 <= time.time() - started < 10
+
+
+def _pool_probe(seed):
+    """What a phase process computes and sees; compared across start methods."""
+    import warnings as warnings_module
+
+    import networkx as nx
+    import numpy as np
+    from ortools.sat.python import cp_model
+    from pyproj import Transformer
+
+    rng = np.random.default_rng(seed)
+    values = rng.integers(1, 50, size=12).tolist()
+    model = cp_model.CpModel()
+    picks = [model.NewBoolVar(f"x{i}") for i in range(len(values))]
+    model.Add(sum(v * x for v, x in zip(values, picks)) <= 100)
+    model.Maximize(sum(v * x for v, x in zip(values, picks)))
+    solver = cp_model.CpSolver()
+    solver.parameters.num_workers = 1
+    solver.parameters.random_seed = seed
+    solver.Solve(model)
+    graph = nx.grid_2d_graph(5, 5)
+    x, y = Transformer.from_crs(4326, 3857, always_xy=True).transform(-122.4, 37.7)
+    once = [f for f in warnings_module.filters if f[0] == "once"]
+    try:
+        parent_threads = len(os.listdir(f"/proc/{os.getppid()}/task"))
+    except OSError:
+        parent_threads = None
+    observed = {
+        "knapsack": solver.ObjectiveValue(),
+        "path": nx.shortest_path_length(graph, (0, 0), (4, 4)),
+        "xy": (round(x, 3), round(y, 3)),
+        "loader_warning_once": bool(once),
+        "omp": os.environ.get("OMP_NUM_THREADS"),
+    }
+    return observed, parent_threads, os.getpid()
+
+
+def test_forkserver_pool_matches_spawn_and_forks_from_a_quiet_server(monkeypatch):
+    from benchmark.slurm import _make_executor
+
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    monkeypatch.setenv("OPENBLAS_NUM_THREADS", "1")
+    results = {}
+    for method in ("spawn", "forkserver"):
+        monkeypatch.setenv("BENCHMARK_SLURM_START_METHOD", method)
+        with _make_executor(2) as executor:
+            futures = [executor.submit(_pool_probe, seed) for seed in (1, 2, 3)]
+            results[method] = [future.result() for future in futures]
+    assert [r[0] for r in results["spawn"]] == [r[0] for r in results["forkserver"]]
+    assert all(r[0]["loader_warning_once"] for r in results["forkserver"])
+    assert all(r[0]["omp"] == "1" for r in results["forkserver"])
+    # A fresh process per call, each forked from one single-threaded server.
+    assert len({r[2] for r in results["forkserver"]}) == 3
+    assert {r[1] for r in results["forkserver"]} == {1}
