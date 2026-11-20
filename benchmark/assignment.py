@@ -7,6 +7,7 @@ import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -682,6 +683,40 @@ def aggregate_matching_metrics(
     return row_counts
 
 
+#: Per-run files read ahead while one is written. Reads are NFS round trips
+#: (about 0.25 s each from a compute node), so overlapping them is what makes
+#: an aggregation of a thousand runs take a minute rather than half an hour.
+CONCAT_READ_AHEAD = 32
+
+
+def _head_record(path: Path) -> tuple[list[str] | None, list[str] | None]:
+    """A CSV's header and first row (``None`` where absent)."""
+    with path.open(newline="", encoding="utf-8") as stream:
+        reader = csv.reader(stream)
+        return next(reader, None), next(reader, None)
+
+
+def _read_ahead(paths: list[str]):
+    """Yield ``(path, bytes)`` in order, reading up to CONCAT_READ_AHEAD ahead."""
+    from collections import deque
+    from concurrent.futures import ThreadPoolExecutor
+
+    def read(path: str) -> bytes:
+        with open(path, "rb") as raw:
+            return raw.read()
+
+    with ThreadPoolExecutor(max_workers=min(16, CONCAT_READ_AHEAD)) as executor:
+        pending = deque()
+        for path in paths:
+            pending.append((path, executor.submit(read, path)))
+            if len(pending) >= CONCAT_READ_AHEAD:
+                done_path, future = pending.popleft()
+                yield done_path, future.result()
+        while pending:
+            done_path, future = pending.popleft()
+            yield done_path, future.result()
+
+
 def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
     """Concatenate per-run metric CSVs in ``config_name`` order.
 
@@ -693,14 +728,13 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
     the csv module pandas writes with, so every value keeps its text. Each
     run's rows are in ``config_name`` order (the simulator writes them so);
     runs must not interleave: one run's first name may not come before the
-    previous run's last. Returns the row count.
+    previous run's last. Files are read on threads ahead of the writer
+    (:data:`CONCAT_READ_AHEAD`). Returns the row count.
     """
+    from benchmark.results import _read_parallel
+
     sources = []
-    for path in paths:
-        with path.open(newline="", encoding="utf-8") as stream:
-            reader = csv.reader(stream)
-            header = next(reader, None)
-            first = next(reader, None)
+    for path, (header, first) in zip(paths, _read_parallel(_head_record, list(paths))):
         if header is None:
             continue
         if "config_name" not in header:
@@ -708,6 +742,7 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
         key = "" if first is None else first[header.index("config_name")]
         sources.append((key, str(path), header))
     sources.sort()
+    headers = {path: header for _key, path, header in sources}
     columns = list(
         dict.fromkeys(column for _key, _path, header in sources for column in header)
     )
@@ -716,10 +751,11 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
     with output.open("w", newline="", encoding="utf-8") as out:
         writer = csv.writer(out, lineterminator="\n")
         writer.writerow(columns)
-        for _key, path, header in sources:
+        for path, data in _read_ahead([path for _key, path, _header in sources]):
+            header = headers[path]
             config_index = header.index("config_name")
             copied = (
-                _copy_csv_body(path, out, config_index, header)
+                _copy_csv_body(data, out, config_index, header)
                 if header == columns
                 else None
             )
@@ -738,43 +774,40 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
             positions = [
                 header.index(column) if column in header else None for column in columns
             ]
-            with open(path, newline="", encoding="utf-8") as stream:
-                reader = csv.reader(stream)
-                next(reader)
-                for row in reader:
-                    name = row[config_index]
-                    if previous is not None and name < previous:
-                        raise ValueError(
-                            f"Run metric reports interleave config names ({name!r} "
-                            f"after {previous!r} in {path}), so they cannot be "
-                            "concatenated in order."
-                        )
-                    previous = name
-                    writer.writerow(
-                        ["" if index is None else row[index] for index in positions]
+            reader = csv.reader(io.StringIO(data.decode("utf-8"), newline=""))
+            next(reader)
+            for row in reader:
+                name = row[config_index]
+                if previous is not None and name < previous:
+                    raise ValueError(
+                        f"Run metric reports interleave config names ({name!r} "
+                        f"after {previous!r} in {path}), so they cannot be "
+                        "concatenated in order."
                     )
-                    rows += 1
+                previous = name
+                writer.writerow(
+                    ["" if index is None else row[index] for index in positions]
+                )
+                rows += 1
         out.flush()
         os.fsync(out.fileno())
     return rows
 
 
 def _copy_csv_body(
-    path: str, out, config_index: int, header: list[str]
+    data: bytes, out, config_index: int, header: list[str]
 ) -> tuple[str, str, int] | None:
     """Copy a CSV's rows (not its header) to ``out`` unchanged, if they are plain.
 
-    The header (often quoted: some metric names hold commas) must be the
-    file's first line, which it is when that line parses to ``header``. Rows
-    with no quote character and no carriage return are one record per
-    ``\\n``-terminated line with no field holding a comma, so their records
-    are their lines and their fields the comma-split cells, exactly as the
-    csv module would read them. Returns the first and last rows'
-    ``config_name`` and the row count, or ``None`` when the rows are not plain
-    (the caller then re-writes them row by row).
+    ``data`` is the whole file. The header (often quoted: some metric names
+    hold commas) must be its first line, which it is when that line parses to
+    ``header``. Rows with no quote character and no carriage return are one
+    record per ``\\n``-terminated line with no field holding a comma, so their
+    records are their lines and their fields the comma-split cells, exactly
+    as the csv module would read them. Returns the first and last rows'
+    ``config_name`` and the row count, or ``None`` when the rows are not
+    plain (the caller then re-writes them row by row).
     """
-    with open(path, "rb") as raw:
-        data = raw.read()
     end = data.find(b"\n")
     if end < 0:
         return "", "", 0
