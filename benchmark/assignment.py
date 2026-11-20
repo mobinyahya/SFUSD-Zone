@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+import warnings
 from typing import Any, Mapping
 
 from assignment.generated_zones import (
@@ -559,12 +560,18 @@ def run_task_matching(task: BenchmarkTask, matching: MatchingRunConfig) -> str:
     ]
     folder = matching_dir(root)
     if ready:
-        run_generated_zone_assignments(
-            matching.config,
-            ready,
-            assignment_folder=folder,
-            workers=1,
-        )
+        with warnings.catch_warnings():
+            # A sweep matches every run in its own data by design; the
+            # matching config's placeholder data block is always replaced.
+            warnings.filterwarnings(
+                "ignore", message="The matching config's data is ignored"
+            )
+            run_generated_zone_assignments(
+                matching.config,
+                ready,
+                assignment_folder=folder,
+                workers=1,
+            )
     status = "complete" if ready else "skipped"
     write_json(
         str(folder / MATCHING_COMPLETE_FILENAME),
@@ -579,7 +586,10 @@ def run_task_matching(task: BenchmarkTask, matching: MatchingRunConfig) -> str:
 
 
 def aggregate_matching_metrics(
-    root_folder: str | Path, assignment_dir: str
+    root_folder: str | Path,
+    assignment_dir: str,
+    *,
+    run_dirs: list[str] | None = None,
 ) -> dict[str, int] | None:
     """Rebuild the sweep's ``metrics_*.csv`` from its runs' own reports.
 
@@ -598,21 +608,29 @@ def aggregate_matching_metrics(
         MarketGenerator,
     )
 
+    from benchmark.results import _read_parallel
+
     files = MarketGenerator.AGGREGATE_METRIC_FILES
     root = Path(root_folder).expanduser().resolve()
     sources: dict[str, list[Path]] = {name: [] for name in files}
     matched_runs = 0
-    for run_dir in discover_run_dirs(str(root)):
+
+    def run_reports(run_dir):
         marker = _read_matching_marker(run_dir)
         if marker is None or marker.get("status") != "complete":
-            continue
+            return {}
         metrics_dir = matching_dir(run_dir) / AGGREGATE_METRICS_DIRNAME
-        found = False
-        for name, filename in files.items():
-            if (metrics_dir / filename).is_file():
-                sources[name].append(metrics_dir / filename)
-                found = True
-        matched_runs += found
+        return {
+            name: metrics_dir / filename
+            for name, filename in files.items()
+            if (metrics_dir / filename).is_file()
+        }
+
+    folders = discover_run_dirs(str(root)) if run_dirs is None else run_dirs
+    for reports in _read_parallel(run_reports, folders):
+        for name, path in reports.items():
+            sources[name].append(path)
+        matched_runs += bool(reports)
     if not matched_runs:
         return None
 
@@ -664,12 +682,17 @@ def aggregate_matching_metrics(
 
 
 def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
-    """Concatenate per-run metric CSVs in ``config_name`` order, row by row.
+    """Concatenate per-run metric CSVs in ``config_name`` order.
 
     Columns are the union of the runs' headers in first-seen order (the
     finalizer's rule); a run missing a column gets an empty cell, which is how
-    pandas writes a missing value. Fields go back out through the csv module
-    pandas writes with, so every value keeps its text. Returns the row count.
+    pandas writes a missing value. A run whose header is the union already
+    is copied byte for byte (most of an aggregation's time otherwise goes to
+    re-parsing gigabytes of CSV); any other run's fields go back out through
+    the csv module pandas writes with, so every value keeps its text. Each
+    run's rows are in ``config_name`` order (the simulator writes them so);
+    runs must not interleave: one run's first name may not come before the
+    previous run's last. Returns the row count.
     """
     sources = []
     for path in paths:
@@ -694,14 +717,25 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
         writer.writerow(columns)
         for _key, path, header in sources:
             config_index = header.index("config_name")
-            positions = (
-                None
-                if header == columns
-                else [
-                    header.index(column) if column in header else None
-                    for column in columns
-                ]
+            copied = (
+                _copy_csv_body(path, out, config_index) if header == columns else None
             )
+            if copied is not None:
+                first_name, last_name, count = copied
+                if count:
+                    if previous is not None and first_name < previous:
+                        raise ValueError(
+                            f"Run metric reports interleave config names "
+                            f"({first_name!r} after {previous!r} in {path}), so they "
+                            "cannot be concatenated in order."
+                        )
+                    previous = last_name
+                rows += count
+                continue
+            positions = [
+                header.index(column) if column in header else None
+                for column in columns
+            ]
             with open(path, newline="", encoding="utf-8") as stream:
                 reader = csv.reader(stream)
                 next(reader)
@@ -715,11 +749,38 @@ def _concatenate_metric_csvs(paths: list[Path], output: Path) -> int:
                         )
                     previous = name
                     writer.writerow(
-                        row
-                        if positions is None
-                        else ["" if index is None else row[index] for index in positions]
+                        ["" if index is None else row[index] for index in positions]
                     )
                     rows += 1
         out.flush()
         os.fsync(out.fileno())
     return rows
+
+
+def _copy_csv_body(path: str, out, config_index: int) -> tuple[str, str, int] | None:
+    """Copy a CSV's rows (not its header) to ``out`` unchanged, if it is plain.
+
+    A file with no quote character and no carriage return has one record per
+    ``\\n``-terminated line and no field holding a comma, so its records are
+    its lines and its fields its comma-split cells, exactly as the csv module
+    would read them. Returns the first and last rows' ``config_name`` and the
+    row count, or ``None`` for any other file (the caller then re-writes it
+    row by row).
+    """
+    with open(path, "rb") as raw:
+        data = raw.read()
+    if b'"' in data or b"\r" in data:
+        return None
+    end = data.find(b"\n")
+    if end < 0:
+        return "", "", 0
+    body = data[end + 1 :]
+    if not body:
+        return "", "", 0
+    if not body.endswith(b"\n"):
+        body += b"\n"
+    lines = body.split(b"\n", 1)[0], body.rstrip(b"\n").rsplit(b"\n", 1)[-1]
+    first_name = lines[0].decode("utf-8").split(",")[config_index]
+    last_name = lines[1].decode("utf-8").split(",")[config_index]
+    out.write(body.decode("utf-8"))
+    return first_name, last_name, body.count(b"\n")

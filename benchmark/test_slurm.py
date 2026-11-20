@@ -43,6 +43,7 @@ from benchmark.slurm import (
     execution_units,
     expected_task_seconds,
     MAX_SUBMITTED_SLURM_JOBS,
+    topup_plan,
     SlurmAllocation,
     SlurmPlan,
     _build_parser,
@@ -98,7 +99,8 @@ def test_submission_script_has_required_directives(tmp_path):
     assert "--cpus-per-task=4" in script
     assert script.count("--mem-per-cpu=4G") == 1
     assert "--export=ALL,OMP_NUM_THREADS=1" in script
-    assert "benchmark_job_0=$(sbatch" in script
+    assert "if job=$(sbatch" in script
+    assert f"--comment=sfusd-plan:{plan.plan_id}" in script
     assert "--dependency" not in script
     assert "worker-allocation" in script
     assert "--allocation-index" in script
@@ -182,10 +184,9 @@ def test_submit_uses_parsable_account_partition_without_dependencies(tmp_path):
     assert len(submitted) == 1
     assert submitted[0].phase == "benchmark"
     assert submitted[0].job_id == "120"
-    assert calls[0][0][0] == "squeue"
-    assert calls[1][0][:6] == ["sbatch", "--parsable", "-A", "soal", "-p", "soal"]
-    assert "--cpus-per-task=4" in calls[1][0]
-    assert not any(value.startswith("--dependency") for value in calls[1][0])
+    assert calls[0][0][:6] == ["sbatch", "--parsable", "-A", "soal", "-p", "soal"]
+    assert "--cpus-per-task=4" in calls[0][0]
+    assert not any(value.startswith("--dependency") for value in calls[0][0])
     assert all(
         call[1] == {"check": True, "capture_output": True, "text": True}
         for call in calls
@@ -248,52 +249,101 @@ def test_oversized_saved_plan_is_rejected_before_any_submission(
     assert calls == []
 
 
-@pytest.mark.parametrize("existing", [11, 12])
-def test_submit_counts_existing_user_jobs_before_submitting(tmp_path, existing):
-    plan = _plan(tmp_path)
-    calls = []
+def _limit_refusal(command):
+    return subprocess.CalledProcessError(
+        1,
+        command,
+        output="",
+        stderr="sbatch: error: QOSMaxSubmitJobPerUserLimit\n"
+        "sbatch: error: Batch job submission failed: Job violates accounting/QOS "
+        "policy (job submit limit, user's size and/or time limits)\n",
+    )
+
+
+def test_submit_stops_at_a_job_limit_and_keeps_what_was_accepted(
+    tmp_path, monkeypatch, capsys
+):
+    plan = _large_matching_plan(tmp_path, monkeypatch)
+    accepted = iter(range(100, 108))
 
     def fake_run(command, **kwargs):
-        calls.append(command)
+        assert command[0] == "sbatch"
+        job = next(accepted, None)
+        if job is None:
+            raise _limit_refusal(command)
+        return subprocess.CompletedProcess(command, 0, stdout=f"{job}\n", stderr="")
+
+    submitted = submit_plan(plan, tmp_path / "plan.json", run=fake_run)
+
+    assert [job.job_id for job in submitted] == [str(i) for i in range(100, 108)]
+    assert [job.allocation_index for job in submitted] == list(range(8))
+    assert "4 allocation(s) not submitted" in capsys.readouterr().err
+
+
+def test_submit_raises_other_sbatch_errors(tmp_path):
+    def fake_run(command, **kwargs):
+        raise subprocess.CalledProcessError(1, command, output="", stderr="boom")
+
+    with pytest.raises(subprocess.CalledProcessError):
+        submit_plan(_plan(tmp_path), tmp_path / "plan.json", run=fake_run)
+
+
+def test_topup_submits_only_the_plan_allocations_not_live(tmp_path, monkeypatch):
+    plan = _large_matching_plan(tmp_path, monkeypatch)
+    tag = f"sfusd-plan:{plan.plan_id}"
+    squeue = "\n".join(
+        [
+            f"500|benchmark-0|{tag}",
+            f"501|benchmark-3|{tag}",
+            "502|benchmark-1|sfusd-plan:someotherplan",
+            "503|unrelated|",
+        ]
+    )
+    sbatched = []
+
+    def fake_run(command, **kwargs):
         if command[0] == "squeue":
-            return subprocess.CompletedProcess(
-                command, 0, stdout="\n".join(str(i) for i in range(existing)), stderr=""
-            )
-        return subprocess.CompletedProcess(command, 0, stdout="123\n", stderr="")
+            return subprocess.CompletedProcess(command, 0, stdout=squeue, stderr="")
+        name = next(value for value in command if value.startswith("--job-name="))
+        sbatched.append(int(name.rsplit("-", 1)[1]))
+        return subprocess.CompletedProcess(
+            command, 0, stdout=f"{600 + len(sbatched)}\n", stderr=""
+        )
 
-    if existing == 12:
-        with pytest.raises(RuntimeError, match="No jobs were submitted"):
-            submit_plan(plan, tmp_path / "plan.json", run=fake_run)
-        assert len(calls) == 1
-    else:
-        assert len(submit_plan(plan, tmp_path / "plan.json", run=fake_run)) == 1
-        assert calls[-1][0] == "sbatch"
+    live, submitted = topup_plan(plan, tmp_path / "plan.json", run=fake_run)
+
+    assert live == {0: "500", 3: "501"}
+    assert sbatched == [i for i in range(12) if i not in (0, 3)]
+    assert [job.allocation_index for job in submitted] == sbatched
 
 
-def test_generated_script_checks_existing_jobs_before_submitting(tmp_path):
+def test_generated_script_submits_past_a_refused_allocation(tmp_path, monkeypatch):
     directory = tmp_path / "bin"
     directory.mkdir()
-    squeue = directory / "squeue"
-    squeue.write_text(
-        "#!/bin/sh\nprintf '%s\\n' " + " ".join(str(i) for i in range(12)) + "\n"
-    )
-    squeue.chmod(0o755)
+    counter = tmp_path / "count"
     sbatch = directory / "sbatch"
-    marker = tmp_path / "submitted"
-    sbatch.write_text(f"#!/bin/sh\ntouch '{marker}'\n")
+    # Accept the first two jobs, refuse the third, accept the rest.
+    sbatch.write_text(
+        "#!/bin/sh\n"
+        f"n=$(cat '{counter}' 2>/dev/null || echo 0); n=$((n + 1)); echo $n > '{counter}'\n"
+        'if [ "$n" = 3 ]; then echo "sbatch: error: QOSMaxSubmitJobPerUserLimit" >&2; exit 1; fi\n'
+        'echo "$((700 + n))"\n'
+    )
     sbatch.chmod(0o755)
+    plan = _large_matching_plan(tmp_path, monkeypatch)
 
     result = subprocess.run(
         ["bash"],
-        input=submission_script(_plan(tmp_path), tmp_path / "plan.json"),
+        input=submission_script(plan, tmp_path / "plan.json"),
         env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}"},
         capture_output=True,
         text=True,
     )
 
-    assert result.returncode == 1
-    assert "12 existing jobs plus 1 planned jobs" in result.stderr
-    assert not marker.exists()
+    assert result.returncode == 0
+    assert result.stdout.count("allocation ") == 11
+    assert "allocation 2 not submitted" in result.stderr
+    assert "topup --plan" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -560,10 +610,12 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
     assert len(aggregate_calls) == 1
     assert aggregate_calls[0][1]["matching_dir"] is None
 
-    # The same plan's done claims are final: a second run finds no work.
+    # The same plan's done claims are final: a second run finds no work, and
+    # with nothing new to report it leaves the sweep's aggregation alone.
     events.clear()
     assert run_benchmark_worker("plan.json", 0) == 0
     assert events == []
+    assert len(aggregate_calls) == 1
 
     def crashing(task, **kwargs):
         raise RuntimeError("worker crash")
@@ -571,7 +623,7 @@ def test_worker_enforces_allocation_and_evaluates_after_optimization(
     _fresh_claims(plan)
     monkeypatch.setattr("benchmark.slurm.run_optimize_and_evaluate", crashing)
     assert run_benchmark_worker("plan.json", 0) == 1
-    assert len(aggregate_calls) == 3
+    assert len(aggregate_calls) == 2
 
 
 def test_worker_matches_each_task_right_after_its_own_evaluation(

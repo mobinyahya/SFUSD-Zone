@@ -141,7 +141,31 @@ def loader_warn(message: str, *, stacklevel: int = 2) -> None:
             if message in _SHOWN:
                 return
             _SHOWN.add(message)
+        if not _first_in_shared_dir(message):
+            return
     warnings.warn(message, LoaderWarning, stacklevel=stacklevel + 1)
+
+
+#: Directory of one marker file per warning shown; when set, a warning is shown
+#: once across every process that shares the directory (a Slurm allocation
+#: points it at node-local /dev/shm), not once per process.
+WARN_ONCE_DIR_ENV = "SFUSD_WARN_ONCE_DIR"
+
+
+def _first_in_shared_dir(message: str) -> bool:
+    """Whether this process is the first sharing the warn-once dir to show it."""
+    directory = os.environ.get(WARN_ONCE_DIR_ENV)
+    if not directory:
+        return True
+    marker = Path(directory) / hashlib.sha256(message.encode()).hexdigest()[:32]
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        os.close(os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+    except FileExistsError:
+        return False
+    except OSError:
+        return True
+    return True
 
 
 def _mode() -> str:

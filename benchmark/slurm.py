@@ -39,7 +39,7 @@ from benchmark.results import aggregate_results
 from benchmark.runner import (
     TaskResult,
     evaluate_optimization_task,
-    run_optimization_phase,
+    run_optimization_phase,  # noqa: F401 - tests patch it to check it is not used
     run_optimize_and_evaluate,
     timed_phase,
     valid_existing_result,
@@ -339,37 +339,48 @@ def write_submission_script(
 
 
 def submission_script(plan: SlurmPlan, plan_path: Path) -> str:
-    """Render the plan's benchmark allocations as ``sbatch`` calls."""
+    """Render the plan's benchmark allocations as ``sbatch`` calls.
+
+    Each allocation is submitted on its own: one refused by the job limit is
+    reported and the rest still go in. Every allocation claims from the same
+    queue, so a sweep runs on however many are accepted; the rest can be added
+    later with ``python -m benchmark.slurm topup --plan PLAN``.
+    """
 
     _validate_plan(plan)
-    job_count = _submission_job_count(plan)
+    _submission_job_count(plan)
     allocations = plan.allocations
-    lines = ["#!/usr/bin/env bash", "set -euo pipefail", GUROBI_LICENSE_SETUP, ""]
-    if job_count:
-        lines.extend(
-            [
-                'existing_jobs=$(squeue --noheader --array --user "$(id -un)" --format=%i | wc -l)',
-                f"if (( existing_jobs + {job_count} > {MAX_SUBMITTED_SLURM_JOBS} )); then",
-                '    printf "Cannot submit: %s existing jobs plus '
-                f'{job_count} planned jobs exceeds the {MAX_SUBMITTED_SLURM_JOBS}-job limit.\\n" '
-                '"$existing_jobs" >&2',
-                "    exit 1",
-                "fi",
-                "",
-            ]
-        )
+    lines = ["#!/usr/bin/env bash", "set -uo pipefail", GUROBI_LICENSE_SETUP, ""]
+    lines.append("refused=0")
     for index in range(len(allocations)):
         command = _sbatch_options(plan, plan_path, index)
-        variable = f"benchmark_job_{index}"
-        lines.append(f"{variable}=$({_shell_command(command)})")
-        lines.append(f'{variable}="${{{variable}%%;*}}"')
-        lines.append(f'printf "%s\\n" "allocation {index}=${{{variable}}}"')
+        lines.append(f"if job=$({_shell_command(command)}); then")
+        lines.append(f'    printf "%s\\n" "allocation {index}=${{job%%;*}}"')
+        lines.append("else")
+        lines.append(f'    printf "%s\\n" "allocation {index} not submitted" >&2')
+        lines.append("    refused=$((refused + 1))")
+        lines.append("fi")
         lines.append("")
     if not allocations:
         lines.append(
             'printf "%s\\n" "All benchmark tasks completed; no jobs to submit."'
         )
+    else:
+        lines.extend(
+            [
+                "if (( refused )); then",
+                '    printf "%s\\n" "$refused allocation(s) not submitted; the rest '
+                "share the queue. Add more later with: uv run python -m benchmark.slurm "
+                f'topup --plan {shlex.quote(str(plan_path))}" >&2',
+                "fi",
+            ]
+        )
     return "\n".join(lines)
+
+
+_PLAN_COMMENT_PREFIX = "sfusd-plan:"
+#: sbatch's message when a job would exceed a user or QOS limit.
+_SUBMIT_LIMIT_MARKERS = ("QOSMaxSubmitJobPerUserLimit", "job submit limit", "QOSMax")
 
 
 def submit_plan(
@@ -378,27 +389,99 @@ def submit_plan(
     *,
     sbatch: str = "sbatch",
     run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    indices: Sequence[int] | None = None,
 ) -> list[SubmittedAllocation]:
-    """Explicitly submit all planned jobs and return their Slurm identifiers."""
+    """Submit the plan's allocations (or ``indices``) and return their job ids.
+
+    Allocations are submitted one at a time. When Slurm refuses one for a job
+    limit, submission stops there and the accepted ones are returned: every
+    allocation claims from the plan's one queue, so the sweep runs on those,
+    and ``topup`` adds the rest once the limit allows. Any other sbatch error
+    is raised.
+    """
 
     _validate_plan(plan)
-    job_count = _submission_job_count(plan)
-    if job_count:
-        _check_submission_capacity(job_count, run)
+    _submission_job_count(plan)
     _log_dir(plan).mkdir(parents=True, exist_ok=True)
     plan_path = Path(plan_path).expanduser().resolve()
     allocations = plan.allocations
+    wanted = range(len(allocations)) if indices is None else list(indices)
     submitted: list[SubmittedAllocation] = []
-    for index, allocation in enumerate(allocations):
-        job_id = _submit(_sbatch_options(plan, plan_path, index, sbatch=sbatch), run)
+    for index in wanted:
+        try:
+            job_id = _submit(
+                _sbatch_options(plan, plan_path, index, sbatch=sbatch), run
+            )
+        except subprocess.CalledProcessError as exc:
+            message = f"{exc.stderr or ''}{exc.stdout or ''}"
+            if any(marker in message for marker in _SUBMIT_LIMIT_MARKERS):
+                left = len(wanted) - len(submitted)
+                print(
+                    f"Slurm refused allocation {index} for a job limit; "
+                    f"{left} allocation(s) not submitted. The {len(submitted)} "
+                    "submitted share the queue; add the rest later with "
+                    f"`python -m benchmark.slurm topup --plan {plan_path}`.",
+                    file=sys.stderr,
+                )
+                break
+            raise
         submitted.append(
             SubmittedAllocation(
                 allocation_index=index,
-                phase=allocation.phase,
+                phase=allocations[index].phase,
                 job_id=job_id,
             )
         )
     return submitted
+
+
+def live_plan_allocations(
+    plan: SlurmPlan,
+    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[int, str]:
+    """The plan's pending or running allocations: ``{index: job id}``."""
+    result = run(
+        [
+            "squeue",
+            "--noheader",
+            "--user",
+            getpass.getuser(),
+            "--states=PENDING,RUNNING,CONFIGURING,REQUEUED,RESIZING,SUSPENDED",
+            "--format=%i|%j|%k",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    tag = f"{_PLAN_COMMENT_PREFIX}{plan.plan_id}"
+    live: dict[int, str] = {}
+    for line in result.stdout.splitlines():
+        parts = line.strip().split("|", 2)
+        if len(parts) != 3 or parts[2].strip() != tag:
+            continue
+        job_id, name, _ = parts
+        match = re.fullmatch(r"benchmark-(\d+)", name.strip())
+        if match:
+            live[int(match.group(1))] = job_id.strip()
+    return live
+
+
+def topup_plan(
+    plan: SlurmPlan,
+    plan_path: str | Path,
+    *,
+    sbatch: str = "sbatch",
+    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> tuple[dict[int, str], list[SubmittedAllocation]]:
+    """Submit the plan's allocations that are not pending or running.
+
+    Use it after a job limit refused part of a submission, or after
+    allocations died: the new ones claim whatever the queue still holds,
+    including the dead ones' tasks once their claims go stale.
+    """
+    live = live_plan_allocations(plan, run)
+    missing = [index for index in range(len(plan.allocations)) if index not in live]
+    return live, submit_plan(plan, plan_path, sbatch=sbatch, run=run, indices=missing)
 
 
 def _submission_job_count(plan: SlurmPlan) -> int:
@@ -669,6 +752,8 @@ class ClaimStore:
         self._clock = clock
         self._live_jobs_refreshed = clock()
         self.held: dict[str, Path] = {}
+        #: Tasks (not the aggregation) this store has marked done.
+        self.finished = 0
         #: The record each held claim was created with, kept up to date.
         self.records: dict[str, dict[str, Any]] = {}
         self._clock_offset = 0.0
@@ -789,6 +874,24 @@ class ClaimStore:
                 return state
             generation += 1
 
+    def claim_again(self, task_id: str) -> str:
+        """Claim a task this plan already finished, as its next generation.
+
+        For the aggregation: an allocation that finished tasks after the
+        sweep was last aggregated must aggregate again. Returns
+        :data:`CLAIMED`, or :data:`HELD` if another allocation got there first.
+        """
+        state = self.try_claim(task_id)
+        if state != DONE:
+            return state
+        path = self.current_path(task_id)
+        generation = int(path.name.rsplit(".", 1)[1]) + 1 if path else 0
+        target = self._path(task_id, generation)
+        if self._create(target, task_id):
+            self.held[task_id] = target
+            return CLAIMED
+        return HELD
+
     def available(self, task_id: str) -> bool:
         """Whether a claim attempt could take ``task_id`` now (no claiming)."""
         path = self.current_path(task_id)
@@ -882,6 +985,8 @@ class ClaimStore:
         path = self.held.pop(task_id, None)
         if path is None:
             return
+        if status == "done" and task_id != AGGREGATE_CLAIM:
+            self.finished += 1
         record = dict(self.records.pop(task_id, None) or self._record(task_id, status))
         record.update(status=status, finished_at=_utc_now(), **extra)
         write_json(str(path), record)
@@ -1364,6 +1469,9 @@ def run_benchmark_worker(
     for setting in THREAD_ENVIRONMENT:
         name, value = setting.split("=", 1)
         os.environ.setdefault(name, value)  # The forkserver inherits these.
+    # Every process of the allocation shows each loader warning once between
+    # them (loaders.table_cache.WARN_ONCE_DIR_ENV), not once each.
+    warn_dir = _warn_once_dir()
     try:
         plan = load_plan(plan_path)
         allocation = _allocation_at(plan, allocation_index)
@@ -1387,13 +1495,81 @@ def run_benchmark_worker(
         print(f"Benchmark allocation failed: {exc}", file=sys.stderr, flush=True)
         failed = True
     finally:
-        if plan is not None and work_started:
+        if plan is not None and work_started and claims is not None:
             try:
-                _aggregate(plan)
+                _aggregate_if_last(plan, claims)
             except Exception as exc:
                 print(f"Aggregation failed: {exc}", file=sys.stderr, flush=True)
                 failed = True
+        if warn_dir is not None:
+            from loaders.table_cache import WARN_ONCE_DIR_ENV
+
+            os.environ.pop(WARN_ONCE_DIR_ENV, None)
+            shutil.rmtree(warn_dir, ignore_errors=True)
     return 1 if failed or plan is None else 0
+
+
+def _warn_once_dir() -> Path | None:
+    """Point this allocation's processes at one node-local warn-once dir."""
+    from loaders.table_cache import WARN_ONCE_DIR_ENV
+
+    if os.environ.get(WARN_ONCE_DIR_ENV):
+        return None
+    base = Path("/dev/shm") if Path("/dev/shm").is_dir() else Path(tempfile.gettempdir())
+    job = os.environ.get("SLURM_JOB_ID") or f"local-{os.getpid()}"
+    directory = base / f"sfusd-warn-{getpass.getuser()}-{job}"
+    os.environ[WARN_ONCE_DIR_ENV] = str(directory)
+    return directory
+
+
+#: Claim name that makes one allocation the sweep's aggregator.
+AGGREGATE_CLAIM = "__aggregate__"
+
+
+def _aggregate_if_last(plan: SlurmPlan, claims: "ClaimStore") -> bool:
+    """Aggregate the sweep if this is its last allocation; return whether it did.
+
+    Every allocation used to rebuild the sweep's CSVs on exit, one after
+    another under the aggregation lock, each re-reading every run over NFS.
+    Now an allocation aggregates only once no other allocation still holds a
+    task, and only the one that wins the :data:`AGGREGATE_CLAIM` claim does;
+    an allocation that leaves work running elsewhere leaves the aggregation to
+    whichever allocation finishes last. The claim is marked done afterwards, so
+    a resubmitted allocation of the same plan with nothing to do does not
+    aggregate again; a crashed aggregator's claim goes stale like any other,
+    and ``python -m benchmark.slurm aggregate --plan PLAN`` reruns it by hand.
+    """
+    claims.refresh_live_jobs(force=True)
+    held = [
+        task.task_id
+        for task in plan.tasks
+        if (path := claims.current_path(task.task_id)) is not None
+        and claims.judge(path) == HELD
+    ]
+    if held:
+        print(
+            f"aggregate skipped: {len(held)} task(s) still held by other "
+            "allocations; the last allocation aggregates",
+            flush=True,
+        )
+        return False
+    state = (
+        claims.claim_again(AGGREGATE_CLAIM)
+        if claims.finished
+        else claims.try_claim(AGGREGATE_CLAIM)
+    )
+    if state != CLAIMED:
+        print(f"aggregate skipped: another allocation's aggregation is {state}", flush=True)
+        return False
+    started = time.monotonic()
+    try:
+        _aggregate(plan)
+    except BaseException:
+        claims.release(AGGREGATE_CLAIM, "aggregation failed")
+        raise
+    claims.mark_done(AGGREGATE_CLAIM, "complete")
+    print(f"aggregate done in {time.monotonic() - started:.1f}s", flush=True)
+    return True
 
 
 def _claim_with_work(
@@ -1644,7 +1820,12 @@ def _finish(plan, queue, claims, state, future) -> None:
 
 
 def _aggregate(plan: SlurmPlan) -> None:
-    """Rebuild the sweep's CSVs, its matching reports too, from every run."""
+    """Rebuild the sweep's CSVs, its matching reports too, from every run.
+
+    Every run under the output root counts, including runs a ``skip_existing``
+    plan left out; the walk stops at each run folder, so it lists one folder
+    per run rather than every lottery file.
+    """
     aggregate_results(
         plan.output_root,
         summary_csv=plan.metrics.summary_csv,
@@ -1837,6 +2018,9 @@ def _sbatch_options(
         "-p",
         SBATCH_PARTITION,
         f"--job-name=benchmark-{index}",
+        # Tags the job with its plan, so ``topup`` can count a plan's live
+        # allocations among the user's other jobs.
+        f"--comment={_PLAN_COMMENT_PREFIX}{plan.plan_id}",
         "--ntasks=1",
         f"--cpus-per-task={allocation.cpus}",
         f"--mem-per-cpu={SBATCH_MEM_PER_CPU}",
@@ -1960,6 +2144,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "worker-allocation", help="Run one benchmark allocation from a saved plan."
     )
     _add_worker_arguments(worker_parser)
+
+    topup_parser = subparsers.add_parser(
+        "topup",
+        help="Submit a saved plan's allocations that are not pending or running.",
+    )
+    topup_parser.add_argument("--plan", required=True, help="Saved plan JSON path.")
+    topup_parser.add_argument(
+        "--sbatch", default="sbatch", help="sbatch executable (default: sbatch)."
+    )
+
+    aggregate_parser = subparsers.add_parser(
+        "aggregate", help="Rebuild a saved plan's summary and matching CSVs now."
+    )
+    aggregate_parser.add_argument("--plan", required=True, help="Saved plan JSON path.")
     return parser
 
 
@@ -2028,6 +2226,23 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "worker-allocation":
             return run_benchmark_worker(args.plan, args.allocation_index)
+        if args.command == "topup":
+            plan = load_plan(args.plan)
+            live, submitted = topup_plan(plan, args.plan, sbatch=args.sbatch)
+            print(
+                f"Live allocations: {len(live)} "
+                f"({', '.join(f'{i}={j}' for i, j in sorted(live.items())) or 'none'})"
+            )
+            for job in submitted:
+                print(f"allocation {job.allocation_index}: {job.phase}={job.job_id}")
+            if not submitted:
+                print("No allocations submitted.")
+            return 0
+        if args.command == "aggregate":
+            plan = load_plan(args.plan)
+            _aggregate(plan)
+            print(f"Aggregated {plan.output_root}")
+            return 0
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
         print(f"benchmark.slurm: {exc}", file=sys.stderr)
         return 1
